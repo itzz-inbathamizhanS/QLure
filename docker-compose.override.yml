@@ -1,0 +1,15 @@
+# Windows fix: SQLite WAL cannot run on a bind mount, so keep data/ in a named volume.
+services:
+  forwarder:
+    volumes:
+      - ./logs:/var/log/qlure:ro
+      - qlure-data:/var/lib/qlure
+  dashboard:
+    environment:
+      TZ: Asia/Kolkata   # show event times in local time (UTC+5:30)
+    volumes:
+      - ./logs:/var/log/qlure
+      - qlure-data:/var/lib/qlure
+      - ./runtime:/runtime
+volumes:
+  qlure-data: {}

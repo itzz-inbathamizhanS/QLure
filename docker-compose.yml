@@ -117,7 +117,7 @@ services:
     <<: *decoy
     command: uvicorn dashboard.app:app --host 0.0.0.0 --port 9000 --no-server-header
     volumes:
-      - ./logs:/var/log/qlure:ro
+      - ./logs:/var/log/qlure
       - ./data:/var/lib/qlure
       - ./runtime:/runtime
     environment:
