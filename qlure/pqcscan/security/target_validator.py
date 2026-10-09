@@ -9,6 +9,7 @@ import ipaddress
 import os
 import re
 import socket
+import threading
 from urllib.parse import urlsplit
 
 from qlure.pqcscan.errors import ScannerErrorType, ScannerException
@@ -18,6 +19,27 @@ HOSTNAME_REGEX = re.compile(
 )
 
 MAX_ADDRESSES = 8
+RESOLVE_TIMEOUT = 5.0
+
+
+def _getaddrinfo_with_timeout(hostname: str):
+    """getaddrinfo in a daemon worker so a hung resolver cannot block the caller (or the dashboard's busy flag)."""
+    box = {}
+
+    def work():
+        try:
+            box["infos"] = socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+        except BaseException as e:  # handed back to the caller
+            box["error"] = e
+
+    worker = threading.Thread(target=work, daemon=True, name="qlure-resolve")
+    worker.start()
+    worker.join(RESOLVE_TIMEOUT)
+    if worker.is_alive():
+        raise ScannerException(ScannerErrorType.DNS_FAILURE, "could not resolve host in time")
+    if "error" in box:
+        raise box["error"]
+    return box["infos"]
 
 
 def _embedded_ipv4(ip: ipaddress.IPv6Address):
@@ -113,7 +135,7 @@ def resolve_target(target: str):
     hostname = normalize_hostname(target)
     allow_local = os.environ.get("ALLOW_LOCAL_SCANNING", "False").lower() == "true"
     try:
-        infos = socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+        infos = _getaddrinfo_with_timeout(hostname)
     except socket.gaierror as e:
         raise ScannerException(
             ScannerErrorType.DNS_FAILURE, f"DNS resolution failed for {hostname}: {e}"

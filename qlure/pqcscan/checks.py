@@ -6,6 +6,8 @@ Connections to the target always use addresses validated by resolve_target (pinn
 import json
 import re
 import socket
+import threading
+import time
 import warnings
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlsplit
@@ -199,35 +201,150 @@ def check_whois(hostname: str) -> dict:
 
 _NAME_OK = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$")
 MAX_CT_BYTES = 6_000_000
+CT_DEADLINE = (
+    14.0  # total seconds for the whole crt.sh call chain, below the engine's 25 s deadline
+)
+CT_BACKOFF = 1.5
+CT_MAX_NAMES = 50
+CT_MAX_RELATED = 20
+_CT_RETRY_STATUS = (502, 503, 504)
+# A deliberately tiny list: for these suffixes the registrable parent keeps three labels.
+_TWO_LEVEL_SUFFIXES = {
+    "co.uk",
+    "org.uk",
+    "ac.uk",
+    "gov.uk",
+    "com.au",
+    "net.au",
+    "org.au",
+    "co.in",
+    "net.in",
+    "org.in",
+    "co.nz",
+    "co.jp",
+    "co.za",
+    "com.br",
+    "com.cn",
+}
 
 
-def check_ct_subdomains(hostname: str) -> list:
-    """Names seen in public Certificate Transparency logs (crt.sh). Observed data only."""
-    resp = requests.get(
-        "https://crt.sh/",
-        params={"q": "%." + hostname, "output": "json"},
-        timeout=(4, 10),
-        stream=True,
-        headers={"User-Agent": USER_AGENT},
-    )
-    if resp.status_code != 200:
-        raise ScannerException(
-            ScannerErrorType.TOOL_FAILURE, f"crt.sh answered HTTP {resp.status_code}"
-        )
-    body = b""
-    for chunk in resp.iter_content(65536):
-        body += chunk
-        if len(body) > MAX_CT_BYTES:
-            raise ScannerException(
-                ScannerErrorType.TOOL_FAILURE, "crt.sh response too large; result discarded"
+class _CtError(Exception):
+    """A crt.sh failure with a short, stack-free reason."""
+
+
+def registrable_parent(hostname: str) -> str | None:
+    """Conservative registrable parent (last 2 labels, 3 for common 2-level suffixes), or None
+    when `hostname` already is that parent."""
+    labels = hostname.split(".")
+    keep = 3 if ".".join(labels[-2:]) in _TWO_LEVEL_SUFFIXES else 2
+    return ".".join(labels[-keep:]) if len(labels) > keep else None
+
+
+def _ct_fetch(query: str, deadline: float, cancel: threading.Event) -> list:
+    """One crt.sh query with a single retry. Returns the parsed JSON list or raises _CtError."""
+    for attempt in (0, 1):
+        remaining = deadline - time.monotonic()
+        if cancel.is_set() or remaining <= 1.0:
+            raise _CtError("crt.sh lookup timed out")
+        retry_reason = None
+        resp = None
+        try:
+            resp = requests.get(
+                "https://crt.sh/",
+                params={"q": query, "output": "json"},
+                timeout=(min(4, remaining), min(10, remaining)),
+                stream=True,
+                headers={"User-Agent": USER_AGENT},
             )
+            if resp.status_code in _CT_RETRY_STATUS:
+                retry_reason = f"crt.sh answered HTTP {resp.status_code}"
+            elif resp.status_code != 200:
+                raise _CtError(f"crt.sh answered HTTP {resp.status_code}")
+            else:
+                body = b""
+                for chunk in resp.iter_content(65536):
+                    body += chunk
+                    if len(body) > MAX_CT_BYTES:
+                        raise _CtError("crt.sh response too large; result discarded")
+                    if cancel.is_set() or time.monotonic() > deadline:
+                        raise _CtError("crt.sh lookup timed out")
+                try:
+                    data = json.loads(body)
+                except ValueError:  # includes JSONDecodeError and UnicodeDecodeError
+                    raise _CtError("unexpected response from crt.sh") from None
+                if not isinstance(data, list):
+                    raise _CtError("unexpected response from crt.sh")
+                return data
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            retry_reason = (
+                "crt.sh did not answer in time"
+                if isinstance(e, requests.exceptions.Timeout)
+                else "could not connect to crt.sh"
+            )
+        except requests.exceptions.RequestException:
+            raise _CtError("crt.sh request failed") from None
+        finally:
+            if resp is not None:
+                resp.close()
+        if attempt == 1 or deadline - time.monotonic() <= CT_BACKOFF + 1.0:
+            raise _CtError(retry_reason)
+        if cancel.wait(CT_BACKOFF):
+            raise _CtError("crt.sh lookup timed out")
+    raise _CtError("crt.sh request failed")  # pragma: no cover
+
+
+def _ct_names(entries: list) -> set:
     names = set()
-    for entry in json.loads(body or b"[]"):
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
         for name in str(entry.get("name_value", "")).split("\n"):
             name = name.strip().lower()
-            if name.endswith("." + hostname) and "*" not in name and _NAME_OK.match(name):
+            if "*" not in name and _NAME_OK.match(name):
                 names.add(name)
-    return [{"name": n, "source": "ct_log"} for n in sorted(names)[:50]]
+    return names
+
+
+def check_ct_subdomains(hostname: str, cancel: threading.Event | None = None) -> dict:
+    """Names seen in public Certificate Transparency logs (crt.sh). Observed data only.
+
+    Returns {"ct_status": ok|empty|error, "ct_reason", "names": [{"name","source"}], "ct_truncated",
+    "related_names"}. `names` are only ever under `hostname`; `related_names` come from the registrable
+    parent, are not under `hostname`, and are informational: nothing ever connects to them.
+    """
+    cancel = cancel or threading.Event()
+    deadline = time.monotonic() + CT_DEADLINE
+    out = {
+        "ct_status": "error",
+        "ct_reason": None,
+        "names": [],
+        "ct_truncated": 0,
+        "related_names": [],
+    }
+    try:
+        found = sorted(
+            n
+            for n in _ct_names(_ct_fetch("%." + hostname, deadline, cancel))
+            if n.endswith("." + hostname)
+        )
+    except _CtError as e:
+        out["ct_reason"] = str(e)[:120]
+        return out
+    out["names"] = [{"name": n, "source": "ct_log"} for n in found[:CT_MAX_NAMES]]
+    out["ct_truncated"] = max(0, len(found) - CT_MAX_NAMES)
+    out["ct_status"] = "ok" if found else "empty"
+    parent = registrable_parent(hostname)
+    if parent:
+        try:
+            related = sorted(
+                n
+                for n in _ct_names(_ct_fetch("%." + parent, deadline, cancel))
+                if n.endswith("." + parent) and n != hostname and not n.endswith("." + hostname)
+            )
+            out["related_names"] = related[:CT_MAX_RELATED]
+        except _CtError:
+            pass  # the parent lookup is a bonus; the target's own status stands
+    return out
 
 
 def check_wordlist_subdomains(hostname: str) -> list:

@@ -8,6 +8,7 @@ those addresses.
 
 import json
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import UTC, datetime
@@ -51,6 +52,20 @@ def _timed(fn):
         "reason": reason,
         "value": value,
         "duration_ms": int((time.monotonic() - start) * 1000),
+    }
+
+
+def _ct_summary(outcome) -> dict:
+    """Structured certificate-log status from the ct_subdomains outcome (a failed or timed-out check is an error)."""
+    value = outcome["value"]
+    if outcome["status"] == "ok" and isinstance(value, dict):
+        return value
+    return {
+        "ct_status": "error",
+        "ct_reason": (outcome["reason"] or "lookup failed")[:120],
+        "names": [],
+        "ct_truncated": 0,
+        "related_names": [],
     }
 
 
@@ -159,13 +174,14 @@ def analyze_domain(target: str, mode: str = "standard", authorization: dict = No
     if full and not authorization.get("ownership_verified"):
         return _error(host, "Full scans require verified ownership of the domain")
 
+    cancel = threading.Event()  # tells the crt.sh loop to stop once the deadline has passed
     jobs = {
         "dns": lambda: checks.check_dns(host),
         "whois": lambda: checks.check_whois(host),
         "http_headers": lambda: checks.check_http(host, ips),
         "tls_handshake": lambda: probe_tls(ips, host),
         "tls_key_exchange": lambda: RawTLSProbe(host, ips).probe_key_exchange(),
-        "ct_subdomains": lambda: checks.check_ct_subdomains(host),
+        "ct_subdomains": lambda: checks.check_ct_subdomains(host, cancel),
     }
     if full:
         jobs.update(
@@ -179,6 +195,7 @@ def analyze_domain(target: str, mode: str = "standard", authorization: dict = No
     pool = ThreadPoolExecutor(max_workers=10)
     futures = {name: pool.submit(_timed, fn) for name, fn in jobs.items()}
     wait(futures.values(), timeout=DEADLINE_SECONDS)
+    cancel.set()
     pool.shutdown(
         wait=False, cancel_futures=True
     )  # stragglers are bounded by their own socket timeouts
@@ -246,10 +263,10 @@ def analyze_domain(target: str, mode: str = "standard", authorization: dict = No
         if tls["version"] is None and probe and probe.get("tls13_supported"):
             tls["version"] = "TLSv1.3"
 
+    ct = _ct_summary(outcomes["ct_subdomains"])
     subdomains = {}
-    for name in ("ct_subdomains", "dns_wordlist"):
-        for entry in val(name) or []:
-            subdomains.setdefault(entry["name"], entry)
+    for entry in ct["names"] + (val("dns_wordlist") or []):
+        subdomains.setdefault(entry["name"], entry)
 
     check_report = {
         n: {
@@ -269,6 +286,11 @@ def analyze_domain(target: str, mode: str = "standard", authorization: dict = No
             else {}
         ),
     }
+    check_report["ct_subdomains"].update(
+        status="failed" if ct["ct_status"] == "error" else "ok",
+        ct_status=ct["ct_status"],
+        **({"reason": ct["ct_reason"]} if ct["ct_status"] == "error" else {}),
+    )
     check_report["certificate"] = cert_check
     if not full:
         for name in ("ports", "dns_wordlist", "legacy_tls"):
@@ -296,6 +318,10 @@ def analyze_domain(target: str, mode: str = "standard", authorization: dict = No
         "tls": tls,
         "pqc_posture": _posture(kex, cert) if kex else None,
         "subdomains": sorted(subdomains.values(), key=lambda s: s["name"]),
+        "ct_status": ct["ct_status"],
+        "ct_reason": ct["ct_reason"],
+        "ct_truncated": ct["ct_truncated"],
+        "related_names": ct["related_names"],
     }
     if val("ports"):
         result["ports"] = val("ports")
