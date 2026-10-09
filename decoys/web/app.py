@@ -7,6 +7,7 @@ qlure.events.emit before the response goes out.
 from __future__ import annotations
 
 import hashlib
+import posixpath
 import re
 import secrets
 from pathlib import Path
@@ -19,6 +20,7 @@ from fastapi.templating import Jinja2Templates
 
 from decoys import content, honeytokens
 from decoys.common import fingerprint, read_capped, replay_ts
+from decoys.ssh.shell import load_fs
 from qlure.events import Action, Service, emit
 
 SESSION_COOKIE = "VLXSESSID"
@@ -47,12 +49,29 @@ def _body_summary(body: bytes) -> dict[str, Any]:
     }
 
 
-def _credential(body: bytes) -> dict[str, str]:
+PMA_PATHS = ("/phpmyadmin", "/phpmyadmin/", "/phpmyadmin/index.php", "/pma", "/pma/")
+VIRTUAL_CWD = "/home/deploy"  # base for relative /download names, inside the fake tree only
+
+
+def _credential(body: bytes, path: str = "/login") -> dict[str, str]:
     fields = parse_qs(body.decode("utf-8", errors="replace"), keep_blank_values=True)
+    user_key, pass_key = (
+        ("pma_username", "pma_password")
+        if path in PMA_PATHS
+        else (
+            "username",
+            "password",
+        )
+    )
     return {
-        "username": fields.get("username", [""])[0],
-        "password": fields.get("password", [""])[0],
+        "username": fields.get(user_key, [""])[0],
+        "password": fields.get(pass_key, [""])[0],
     }
+
+
+def _fixed_text(name: str) -> str:
+    """Render one of the fixed template files (no attacker input is passed in)."""
+    return templates.env.get_template(name).render()
 
 
 def _password_honeytoken(credential: dict[str, str]) -> dict[str, Any] | None:
@@ -146,8 +165,9 @@ async def observe(request: Request, call_next):
         },
     }
     emit({**base, "action": Action.HTTP_REQUEST})
-    if request.url.path == "/login" and request.method == "POST" and response.status_code != 413:
-        credential = _credential(body)
+    login_paths = ("/login", *PMA_PATHS)
+    if request.url.path in login_paths and request.method == "POST" and response.status_code != 413:
+        credential = _credential(body, request.url.path)
         token = _password_honeytoken(credential)
         emit(
             {
@@ -208,6 +228,71 @@ async def backup_index(request: Request) -> Response:
 async def backup_config(request: Request) -> Response:
     _file_read(request, "/backup/config.bak", "ht-ssh-001")
     return PlainTextResponse(_backup_config())
+
+
+@app.get("/.git/HEAD", response_class=PlainTextResponse)
+async def git_head(request: Request) -> Response:
+    _file_read(request, "/.git/HEAD")
+    return PlainTextResponse(_fixed_text("git_head.txt"))
+
+
+@app.get("/.git/config", response_class=PlainTextResponse)
+async def git_config(request: Request) -> Response:
+    _file_read(request, "/.git/config", "ht-git-001")
+    return PlainTextResponse(_fixed_text("git_config.txt"))
+
+
+@app.get("/robots.txt", response_class=PlainTextResponse)
+async def robots() -> Response:
+    return PlainTextResponse(_fixed_text("robots.txt"))
+
+
+@app.get("/uploads", response_class=HTMLResponse)
+@app.get("/uploads/", response_class=HTMLResponse)
+async def uploads_index(request: Request) -> Response:
+    return HTMLResponse(_fixed_text("directory_index.html"))
+
+
+@app.api_route("/phpmyadmin", methods=["GET", "POST"], response_class=HTMLResponse)
+@app.api_route("/phpmyadmin/", methods=["GET", "POST"], response_class=HTMLResponse)
+@app.api_route("/phpmyadmin/index.php", methods=["GET", "POST"], response_class=HTMLResponse)
+@app.api_route("/pma", methods=["GET", "POST"], response_class=HTMLResponse)
+@app.api_route("/pma/", methods=["GET", "POST"], response_class=HTMLResponse)
+async def phpmyadmin(request: Request) -> Response:
+    # A POST is always a failed login (phpMyAdmin answers 200 with the form again).
+    return HTMLResponse(_fixed_text("phpmyadmin_login.html"))
+
+
+def _forbidden() -> Response:
+    return HTMLResponse(_fixed_text("forbidden_403.html"), status_code=403)
+
+
+@app.get("/server-status")
+async def server_status() -> Response:
+    return _forbidden()
+
+
+@app.api_route("/upload", methods=["POST", "PUT"])
+async def upload() -> Response:
+    # The middleware logs size, hash and a 2 KB preview. The body is never stored.
+    return _forbidden()
+
+
+def _virtual_path(name: str) -> str:
+    """Normalise a requested name inside the fake tree. normpath clamps `..` at the root."""
+    name = name.replace("\\", "/").replace("\x00", "")
+    return posixpath.normpath(posixpath.join(VIRTUAL_CWD, name))
+
+
+@app.get("/download")
+async def download(request: Request, file: str = "") -> Response:
+    # Lookup is a dict key match in the SSH decoy's fake filesystem; the host is never read.
+    fake = load_fs()
+    path = _virtual_path(file)
+    if file and fake.is_file(path):
+        _file_read(request, path)
+        return PlainTextResponse(fake.files[path])
+    return templates.TemplateResponse(request, "404.html", {}, status_code=404)
 
 
 @app.api_route("/api{tail:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"])
