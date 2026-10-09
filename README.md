@@ -1,0 +1,85 @@
+# Q-Lure
+
+Decoy services and defensive threat observation, with post-quantum evidence protection.
+Team IRAVORA VOID · Horizon 2K26 · Track 02, Problem C01.
+
+Q-Lure runs fake but harmless services, records everything visitors do as structured
+events, groups the events into sessions, scores each session with readable rules, and
+shows the investigator why a session was flagged.
+
+## Status
+
+Phase 0 (first review) is in place:
+
+- Repository layout below, with lint and tests wired for pull requests (`.github/workflows/ci.yml`).
+- Event schema in `qlure/events/` (Pydantic), exported to `docs/event.schema.json`.
+- `emit(event)`: the one helper every decoy uses to validate and append events to `logs/<service>.jsonl`.
+- Web portal decoy (`decoys/web/`, port 8080): serves `/login`, a realistic 404, and logs every
+  request plus every login attempt.
+- `docker-compose.yml` with the internal decoy network, reached only through a gateway.
+
+Next phases: decoys and isolation (1), logging store and hash chain (2), correlation engine (3),
+session view and dashboard (4), evaluation on real captures (5), post-quantum extra (6).
+
+## Run it
+
+With Docker:
+
+```sh
+docker compose up -d --build
+curl -i http://localhost:8080/login
+curl -i -d 'username=admin&password=admin123' http://localhost:8080/login
+cat logs/web.jsonl
+```
+
+Without Docker (Python 3.12):
+
+```sh
+python3.12 -m venv .venv && . .venv/bin/activate
+pip install -e '.[dev]'
+uvicorn decoys.web.app:app --port 8080
+```
+
+Events land in `logs/web.jsonl` (set `QLURE_LOG_DIR` to change the folder). Check any log file
+against the schema with:
+
+```sh
+qlure validate logs/*.jsonl
+```
+
+## Develop
+
+```sh
+pytest -q                 # tests
+ruff check . && ruff format --check .
+qlure schema              # re-export docs/event.schema.json after changing the schema
+```
+
+The event schema is the shared contract: fields are only ever added, never renamed.
+
+## Layout
+
+```
+docker-compose.yml   all services, networks and limits
+gateway/             nginx: the only container with a route to the decoys
+decoys/              web, api, ssh, banners, fakefs, honeytokens.yaml   (Inbathamizhan S)
+qlure/events/        event schema + emit()                              (all, Prasanna Kumar Reddy)
+qlure/store/         forwarder, SQLite store, hash chain                (Prasanna Kumar Reddy)
+qlure/correlate/     sessions, actors, scoring, explanations            (Bharadhwaj M)
+qlure/rules/         rules R1 to R10 in YAML                            (Bharadhwaj M)
+qlure/pqc/           ML-DSA signing, SSH KEX fingerprint (extra)
+qlure/cli.py         qlure schema | validate (capture, replay, eval, verify to come)
+dashboard/           session view and config dashboard, FastAPI + HTMX  (Prasanna Kumar Reddy)
+captures/            real captured sessions: tuning/ and heldout/
+tests/               pytest, one folder per module
+docs/                event schema and design notes
+```
+
+## Safety
+
+- Emulate, never execute: no `exec`, `eval`, `subprocess` or real database in `decoys/`.
+- Decoy containers are read-only, non-root, drop all capabilities and sit on an `internal: true`
+  network with no internet access.
+- No real secrets anywhere. Every planted value is listed in `decoys/honeytokens.yaml` and is fake.
+- Logs and raw captures hold visitor IPs and typed text, so they stay out of git.
+- Evaluation uses only real interactions captured against our own decoys, never simulated datasets.

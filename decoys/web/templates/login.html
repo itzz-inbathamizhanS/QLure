@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ company }} | Staff Portal</title>
+<style>
+  body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; background: #eef1f5; color: #1f2933; }
+  .wrap { max-width: 360px; margin: 10vh auto; background: #fff; border: 1px solid #d5dbe3;
+          border-radius: 6px; padding: 32px; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.sub { margin: 0 0 24px; color: #616e7c; font-size: 13px; }
+  label { display: block; font-size: 13px; margin: 12px 0 4px; }
+  input { width: 100%; box-sizing: border-box; padding: 9px; border: 1px solid #c4ccd6; border-radius: 4px; }
+  button { margin-top: 20px; width: 100%; padding: 10px; border: 0; border-radius: 4px;
+           background: #1d4ed8; color: #fff; font-size: 14px; cursor: pointer; }
+  .err { background: #fdecea; color: #a61b1b; padding: 8px 10px; border-radius: 4px; font-size: 13px; }
+  footer { text-align: center; font-size: 11px; color: #8795a1; margin-top: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>{{ company }}</h1>
+  <p class="sub">Staff Portal &middot; Authorised users only</p>
+  {% if error %}<div class="err">{{ error }}</div>{% endif %}
+  <form method="post" action="/login" autocomplete="off">
+    <label for="username">Username</label>
+    <input id="username" name="username" type="text" required>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" required>
+    <button type="submit">Sign in</button>
+  </form>
+  <footer>&copy; 2026 {{ company }} Pvt. Ltd. &middot; IT Helpdesk ext. 4410</footer>
+</div>
+</body>
+</html>
