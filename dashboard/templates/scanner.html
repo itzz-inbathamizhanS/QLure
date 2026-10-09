@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Q-Lure domain scanner{% endblock %}
+{% block topbar %}<div><h1>Domain scanner</h1><p class="muted small">Checks a domain's TLS setup and how ready it is for post-quantum cryptography. Standard scans use public information. Full scans also run active checks, and need proof that you control the domain.</p></div>{% endblock %}
+{% block content %}
+<div class="stack">
+{% if outcome and outcome.error %}<div class="callout bad" role="alert"><svg class="icon"><use href="#i-alert"/></svg>{{ outcome.error }}</div>{% endif %}
+
+<form method="post" action="/scanner" class="stack">
+<section class="panel">
+  <div class="panel-head"><svg class="icon"><use href="#i-quantum"/></svg><h2>Scan a domain</h2></div>
+  <div class="panel-body form-grid">
+    <label>Domain or https URL
+      <input type="text" name="target" value="{{ target }}" placeholder="example.com" autocomplete="off" required>
+    </label>
+    <label>Scan type
+      <select name="mode">
+        <option value="standard" {{ 'selected' if mode == 'standard' }}>Standard</option>
+        <option value="full" {{ 'selected' if mode == 'full' }} {{ 'disabled' if not full_ready }}>Full (owned domain)</option>
+      </select>
+    </label>
+  </div>
+  <div class="panel-foot">
+    <span class="hint">Ports and IP addresses are not accepted. Private and internal addresses are refused. Results are shown here only and are not saved.</span>
+    <span class="spacer"></span>
+    <button type="submit" name="action" value="verify" class="ghost">Check DNS record</button>
+    <button type="submit" name="action" value="scan">Run scan</button>
+  </div>
+</section>
+</form>
+
+{% if not full_ready %}<div class="callout warn"><svg class="icon"><use href="#i-lock"/></svg>Full scans are off until QLURE_DASHBOARD_SECRET is set on the server. Standard scans still work.</div>{% endif %}
+
+{% if outcome and outcome.verification %}
+{% set v = outcome.verification %}
+<section class="panel">
+  <div class="panel-head"><svg class="icon"><use href="#i-key"/></svg><h2>Ownership record for {{ v.hostname }}</h2></div>
+  <div class="panel-body stack">
+    <dl class="facts">
+      <div class="fact"><dt>Record type</dt><dd>TXT</dd></div>
+      <div class="fact"><dt>Name</dt><dd class="mono">{{ v.record_name }}</dd></div>
+      <div class="fact"><dt>Value</dt><dd class="mono">{{ v.record_value }}</dd></div>
+    </dl>
+    {% if v.verified is defined %}
+      {% if v.verified %}<div class="callout good"><svg class="icon"><use href="#i-check"/></svg>Record found on {{ v.verified_domain }}. Full scans are allowed for this domain.</div>
+      {% else %}<div class="callout warn"><svg class="icon"><use href="#i-info"/></svg>Record not found yet. DNS changes can take a while to appear.</div>{% endif %}
+    {% endif %}
+    <p class="muted small">{{ v.note }}</p>
+  </div>
+</section>
+{% endif %}
+
+{% if outcome and outcome.result %}
+{% set r = outcome.result %}
+{% set tls = r.tls or {} %}
+{% set cert = tls.certificate or {} %}
+{% set kex = tls.key_exchange or {} %}
+{% set counts = {'high': 0, 'medium': 0, 'low': 0, 'info': 0} %}
+{% for f in r.findings %}{% set _ = counts.update({f.severity: counts[f.severity] + 1}) %}{% endfor %}
+
+<section class="panel">
+  <div class="panel-head"><svg class="icon"><use href="#i-shield"/></svg><h2>{{ r.target_url }}</h2><span class="hint">{{ 'full scan, ownership verified' if r.authorization.ownership_verified else 'standard scan' }} · {{ r.scan_timestamp[:19] | replace('T', ' ') }} UTC</span></div>
+  <div class="panel-body stack">
+    {% if r.pqc_posture %}<div class="callout {{ 'good' if r.pqc_posture.key_exchange == 'hybrid_pqc' else 'warn' }}"><svg class="icon"><use href="#i-quantum"/></svg>{{ r.pqc_posture.summary }}</div>{% endif %}
+    <div class="kpis">
+      <div class="kpi is-bad"><div class="kpi-label">High</div><div class="kpi-value">{{ counts.high }}</div><div class="kpi-note">fix first</div></div>
+      <div class="kpi is-warn"><div class="kpi-label">Medium</div><div class="kpi-value">{{ counts.medium }}</div><div class="kpi-note">harvest-now risk</div></div>
+      <div class="kpi"><div class="kpi-label">Low</div><div class="kpi-value">{{ counts.low }}</div><div class="kpi-note">hardening</div></div>
+      <div class="kpi is-accent"><div class="kpi-label">Info</div><div class="kpi-value">{{ counts.info }}</div><div class="kpi-note">context and positives</div></div>
+    </div>
+  </div>
+</section>
+
+<div class="grid-2">
+  <section class="panel">
+    <div class="panel-head"><svg class="icon"><use href="#i-key"/></svg><h2>TLS and certificate</h2></div>
+    <div class="panel-body">
+      <dl class="facts">
+        <div class="fact"><dt>Version</dt><dd>{{ tls.version or 'not observed' }}</dd></div>
+        <div class="fact"><dt>Cipher suite</dt><dd class="mono">{{ tls.cipher_suite or 'not observed' }}</dd></div>
+        <div class="fact"><dt>Key exchange</dt><dd>{{ kex.preferred_group_name or kex.kex or 'not observed' }}</dd></div>
+        <div class="fact"><dt>Trusted</dt><dd>{{ 'yes' if tls.trusted else ('no: ' ~ tls.trust_error if tls.trust_error else 'not observed') }}</dd></div>
+        <div class="fact"><dt>Certificate</dt><dd>{{ cert.subject_cn or 'not observed' }}</dd></div>
+        <div class="fact"><dt>Issuer</dt><dd>{{ cert.issuer_cn or 'not observed' }}</dd></div>
+        <div class="fact"><dt>Key</dt><dd>{{ cert.public_key_algorithm or 'n/a' }}{% if cert.key_size %} {{ cert.key_size }}{% endif %}</dd></div>
+        <div class="fact"><dt>Expires</dt><dd class="mono">{{ cert.not_after[:10] if cert.not_after else 'n/a' }}{% if cert.days_remaining is defined %} ({{ cert.days_remaining }} days){% endif %}</dd></div>
+        <div class="fact"><dt>Addresses</dt><dd class="mono">{{ r.resolved_addresses | join(', ') }}</dd></div>
+      </dl>
+      {% if kex.evidence %}<ul class="muted small">{% for e in kex.evidence %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><svg class="icon"><use href="#i-server"/></svg><h2>Checks</h2></div>
+    <div class="panel-body table-wrap">
+      <table>
+        <thead><tr><th>Check</th><th>Status</th><th>Detail</th></tr></thead>
+        <tbody>
+        {% for name, c in r.checks.items() %}
+          <tr>
+            <td class="mono">{{ name }}</td>
+            <td><span class="chip {{ 'bad' if c.status == 'failed' }}">{{ c.status | replace('_', ' ') }}</span></td>
+            <td class="muted small">{{ c.reason or '' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><svg class="icon"><use href="#i-alert"/></svg><h2>Findings</h2><span class="hint">each finding names the evidence it rests on</span></div>
+  <div class="panel-body stack">
+    {% for f in r.findings %}
+      <div class="callout {{ 'bad' if f.severity == 'high' else ('warn' if f.severity == 'medium' else '') }}">
+        <div><span class="chip {{ 'bad' if f.severity == 'high' }}">{{ f.severity }}</span> <b>{{ f.title }}</b></div>
+        <div class="small">{{ f.detail }}</div>
+        <div class="small muted">Evidence: {{ f.evidence }}</div>
+        <div class="small">Fix: {{ f.recommendation }}</div>
+      </div>
+    {% else %}
+      <p class="muted">No findings. Every check that ran passed, or was not applicable.</p>
+    {% endfor %}
+  </div>
+</section>
+
+{% if r.subdomains %}
+<section class="panel">
+  <div class="panel-head"><svg class="icon"><use href="#i-sessions"/></svg><h2>Subdomains</h2><span class="hint">from certificate transparency logs and, in full scans, a wordlist</span></div>
+  <div class="panel-body"><div class="row">{% for s in r.subdomains[:60] %}<span class="chip mono">{{ s.name }}</span>{% endfor %}</div></div>
+</section>
+{% endif %}
+{% endif %}
+</div>
+{% endblock %}

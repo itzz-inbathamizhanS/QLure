@@ -32,6 +32,18 @@ Give each step about a minute.
 6. **Phone width.** Resize the window to about 390 px wide. The layout should stay on screen with
    no sideways scrolling.
 
+## Domain scanner (both setups)
+
+Use this to show the second part of the dashboard, with no decoys needed.
+
+1. Open **Scanner** in the sidebar.
+2. Enter `example.com`, leave the scan type on **Standard**, and click **Run scan**. Point out the
+   key exchange (hybrid post-quantum), the certificate, the checks table, and the findings. Each finding
+   names its evidence.
+3. For a domain you control, choose **Full (owned domain)** after publishing the DNS TXT record that
+   **Check DNS record** shows. Full scans stay off until `QLURE_DASHBOARD_SECRET` is set on the server.
+4. Explain the limits: no ports or IP addresses, private addresses are refused, and nothing is saved.
+
 ## Show it on Vercel
 
 1. Open https://qlure-dashboard.vercel.app/login.

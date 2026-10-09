@@ -92,6 +92,22 @@ Show the dashboard on the hosted Vercel snapshot or live on your own machine, wi
 same walkthrough for both. See [docs/DEMO.md](docs/DEMO.md) for the steps, the commands for
 localhost, and troubleshooting.
 
+## Domain scanner
+
+`/scanner` checks a domain's TLS setup and how ready it is for post-quantum cryptography. The checks
+come from Q-CAPS and live in `qlure/pqcscan/`. Each finding names the evidence it rests on, and there is
+no single score.
+
+- **Standard scan:** public information only: DNS, WHOIS, HTTP headers, TLS handshake, key exchange,
+  certificate, and subdomains from certificate-transparency logs.
+- **Full scan:** adds port checks, a subdomain wordlist, and legacy TLS probes. It needs a DNS TXT
+  record that proves the admin controls the domain. Check the record on the page, publish it, then scan.
+  Full scans stay off until `QLURE_DASHBOARD_SECRET` is set, so the ownership token stays the same.
+
+Targets are hostnames or https URLs only: ports, credentials and IP addresses are refused. Results are
+shown on the page and are not saved. Scans run one at a time and are rate limited to five a minute per
+dashboard process.
+
 ## Run it
 
 With Docker:
@@ -194,6 +210,10 @@ docs/                event schema and design notes
 ## Safety
 
 - Emulate, never execute: no `exec`, `eval`, `subprocess` or real database in `decoys/`.
+- The decoys and their gateway are the only parts that take traffic. The dashboard makes outbound
+  connections in one place: the domain scanner (`/scanner`), which sends TLS handshakes, DNS and
+  certificate-log lookups to a domain the admin names. It refuses private, loopback and reserved
+  addresses, and full scans need a DNS record that proves the admin controls the domain.
 - Decoy containers are read-only, non-root, drop all capabilities and sit on an `internal: true`
   network with no internet access.
 - No real secrets anywhere. Every planted value is listed in `decoys/honeytokens.yaml` and is fake.

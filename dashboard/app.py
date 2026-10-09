@@ -18,8 +18,9 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 
-from dashboard import data
+from dashboard import data, scanning
 from dashboard.auth import COOKIE, LIFETIME, Auth
 from qlure import settings as cfg
 from qlure.correlate import store as correlate_store
@@ -289,6 +290,36 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
         ok, message = cfg.rollback(conn(), "admin", audit_id)
         return RedirectResponse(
             f"/config?message={message.replace(' ', '+')}&ok={int(ok)}", status_code=303
+        )
+
+    @app.get("/scanner", response_class=HTMLResponse)
+    async def scanner_page(request: Request) -> Response:
+        return _scanner(request)
+
+    @app.post("/scanner", response_class=HTMLResponse)
+    async def scanner_run(
+        request: Request,
+        target: str = Form(""),
+        mode: str = Form("standard"),
+        action: str = Form("scan"),
+    ) -> Response:
+        if action == "verify":
+            outcome = await run_in_threadpool(scanning.verify, target)
+        else:
+            outcome = await run_in_threadpool(scanning.run, target, mode)
+        return _scanner(request, target=target, mode=mode, outcome=outcome)
+
+    def _scanner(
+        request: Request, target: str = "", mode: str = "standard", outcome: dict | None = None
+    ) -> Response:
+        return page(
+            request,
+            "scanner.html",
+            nav="scanner",
+            target=target,
+            mode=mode,
+            outcome=outcome,
+            full_ready=scanning.ownership_secret() is not None,
         )
 
     return app
