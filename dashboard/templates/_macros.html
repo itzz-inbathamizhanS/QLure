@@ -1,0 +1,4 @@
+{% macro scorebar(score, verdict) -%}
+<span class="scorebar"><b>{{ score }}</b><svg viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><rect width="100" height="6" rx="3" class="f-track"/><rect width="{{ [score, 100]|min }}" height="6" rx="3" class="f-{{ verdict }}"/></svg></span>
+{%- endmacro %}
+{% macro verdict(v, size='') -%}<span class="verdict verdict-{{ v }} {{ size }}">{{ v }}</span>{%- endmacro %}

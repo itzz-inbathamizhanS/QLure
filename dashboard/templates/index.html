@@ -1,61 +1,72 @@
 {% extends "base.html" %}
 {% block title %}Q-Lure sessions{% endblock %}
-{% block content %}
-<div class="row">
-  <h1>Sessions</h1>
+{% block topbar %}
+  <div><h1>Sessions</h1>
+  <p class="muted small">{% if stats.first %}Events from {{ stats.first|when }} to {{ stats.last|when }} UTC{% else %}No events yet{% endif %}</p></div>
   <span class="spacer"></span>
-  <form method="post" action="/refresh"><button type="submit">Re-run correlation</button></form>
+  <form method="post" action="/refresh" class="noprint"><button type="submit" class="secondary"><svg class="icon"><use href="#i-refresh"/></svg>Re-run correlation</button></form>
+{% endblock %}
+{% block content %}
+<div class="stack">
+<div class="kpis">
+  <div class="kpi is-accent"><div class="kpi-label">Sessions</div><div class="kpi-value">{{ '{:,}'.format(stats.sessions) }}</div><div class="kpi-note">{{ '{:,}'.format(stats.events) }} events captured</div></div>
+  <div class="kpi is-bad"><div class="kpi-label">Noteworthy</div><div class="kpi-value">{{ '{:,}'.format(stats.verdicts.Noteworthy) }}</div><div class="kpi-note">needs a look first</div></div>
+  <div class="kpi is-warn"><div class="kpi-label">Suspicious</div><div class="kpi-value">{{ '{:,}'.format(stats.verdicts.Suspicious) }}</div><div class="kpi-note">below the Noteworthy bar</div></div>
+  <div class="kpi is-good"><div class="kpi-label">Benign</div><div class="kpi-value">{{ '{:,}'.format(stats.verdicts.Benign) }}</div><div class="kpi-note">{{ stats.reviewed }} reviewed by hand</div></div>
+  <div class="kpi"><div class="kpi-label">Actors</div><div class="kpi-value">{{ stats.actors }}</div><div class="kpi-note">{{ stats.noteworthy_actors }} Noteworthy</div></div>
+  <div class="kpi"><div class="kpi-label">Honeytokens touched</div><div class="kpi-value">{{ stats.honeytokens }}</div><div class="kpi-note">{% if stats.has_model %}{{ stats.disagreements }} model disagreements{% else %}no model trained{% endif %}</div></div>
 </div>
-<form class="filters panel" method="get" action="/"
-      hx-get="/" hx-target="#results" hx-trigger="change, keyup delay:300ms" hx-push-url="true">
-  <label>Verdict
-    <select name="verdict"><option value="">any</option>
-      {% for v in options.verdicts %}<option value="{{ v }}" {{ 'selected' if filters.get('verdict') == v }}>{{ v }}</option>{% endfor %}
-    </select></label>
-  <label>Service
-    <select name="service"><option value="">any</option>
-      {% for v in options.services %}<option value="{{ v }}" {{ 'selected' if filters.get('service') == v }}>{{ v }}</option>{% endfor %}
-    </select></label>
-  <label>Rule
-    <select name="rule"><option value="">any</option>
-      {% for v in options.rules %}<option value="{{ v }}" {{ 'selected' if filters.get('rule') == v }}>{{ v }}</option>{% endfor %}
-    </select></label>
-  <label>Actor
-    <select name="actor"><option value="">any</option>
-      {% for v in options.actors %}<option value="{{ v }}" {{ 'selected' if filters.get('actor') == v }}>{{ v }}</option>{% endfor %}
-    </select></label>
-  <label>Honeytoken
-    <select name="honeytoken"><option value="">any</option>
-      {% for v in options.honeytokens %}<option value="{{ v }}" {{ 'selected' if filters.get('honeytoken') == v }}>{{ v }}</option>{% endfor %}
-    </select></label>
-  <label>From <input type="text" name="since" placeholder="2026-01-01" value="{{ filters.get('since', '') }}"></label>
-  <label>To <input type="text" name="until" placeholder="2026-12-31" value="{{ filters.get('until', '') }}"></label>
-  <label>Sort
-    <select name="sort">
-      <option value="score" {{ 'selected' if filters.get('sort') != 'time' }}>Score</option>
-      <option value="time" {{ 'selected' if filters.get('sort') == 'time' }}>Newest</option>
-    </select></label>
-  <noscript><button type="submit">Filter</button></noscript>
-</form>
-<div class="panel">
-  <h2>SSH clients offering quantum-safe key exchange</h2>
-  {% if pqc.total %}
-  <svg viewBox="0 0 440 {{ pqc.bars|length * 34 + 6 }}" role="img" width="440" class="chart"
-       aria-label="Share of SSH sessions offering post-quantum key exchange, by verdict">
-    {% for b in pqc.bars %}
-    <text x="0" y="{{ loop.index0 * 34 + 20 }}" class="chart-label">{{ b.verdict }}</text>
-    <rect x="90" y="{{ loop.index0 * 34 + 6 }}" width="300" height="20" class="chart-track"></rect>
-    <rect x="90" y="{{ loop.index0 * 34 + 6 }}" width="{{ b.width }}" height="20" class="chart-bar verdict-{{ b.verdict }}"></rect>
-    <text x="396" y="{{ loop.index0 * 34 + 20 }}" class="chart-label">{{ b.offered }}/{{ b.sessions }}</text>
-    {% endfor %}
-  </svg>
-  <p class="muted">Counts SSH sessions whose client sent a key-exchange offer. It records which
-    tools connect, it does not detect quantum attacks, and it adds nothing to any score.</p>
-  {% else %}
-  <p class="muted">No SSH sessions with a recorded key-exchange offer yet.</p>
-  {% endif %}
+
+<div class="grid-main even">
+  <section class="panel" aria-labelledby="dist-h">
+    <div class="panel-head"><h2 id="dist-h">Verdict mix</h2><span class="hint">effective verdict: the more serious of the session's own and its actor's</span></div>
+    <div class="panel-body dist">
+      <svg viewBox="0 0 1000 12" preserveAspectRatio="none" role="img" aria-label="{% for b in stats.bar %}{{ b.verdict }} {{ b.count }}{% if not loop.last %}, {% endif %}{% endfor %}">
+        <rect width="1000" height="12" class="f-track"/>
+        {% for b in stats.bar %}{% if b.w %}<rect x="{{ b.x|round(2) }}" width="{{ b.w|round(2) }}" height="12" class="f-{{ b.verdict }}"/>{% endif %}{% endfor %}
+      </svg>
+      <div class="legend">{% for b in stats.bar %}<span><i class="l-{{ b.verdict }}"></i>{{ b.verdict }} <b>{{ '{:,}'.format(b.count) }}</b></span>{% endfor %}</div>
+    </div>
+  </section>
+  {% include "_pqc.html" %}
 </div>
-<div id="results">
-{% include "_results.html" %}
+
+<section class="panel" aria-labelledby="list-h">
+  <div class="panel-head"><h2 id="list-h">All sessions</h2><span class="hint">most suspicious first; every filter updates the list as you change it</span></div>
+  <form class="filters noprint" method="get" action="/"
+        hx-get="/" hx-target="#results" hx-trigger="change, keyup delay:300ms" hx-push-url="true">
+    <label>Verdict
+      <select name="verdict"><option value="">Any</option>
+        {% for v in options.verdicts %}<option value="{{ v }}" {{ 'selected' if filters.get('verdict') == v }}>{{ v }}</option>{% endfor %}
+      </select></label>
+    <label>Service
+      <select name="service"><option value="">Any</option>
+        {% for v in options.services %}<option value="{{ v }}" {{ 'selected' if filters.get('service') == v }}>{{ v }}</option>{% endfor %}
+      </select></label>
+    <label>Rule
+      <select name="rule"><option value="">Any</option>
+        {% for v in options.rules %}<option value="{{ v }}" {{ 'selected' if filters.get('rule') == v }}>{{ v }}</option>{% endfor %}
+      </select></label>
+    <label>Actor
+      <select name="actor"><option value="">Any</option>
+        {% for v in options.actors %}<option value="{{ v }}" {{ 'selected' if filters.get('actor') == v }}>{{ v[:12] }}</option>{% endfor %}
+      </select></label>
+    <label>Honeytoken
+      <select name="honeytoken"><option value="">Any</option>
+        {% for v in options.honeytokens %}<option value="{{ v }}" {{ 'selected' if filters.get('honeytoken') == v }}>{{ v }}</option>{% endfor %}
+      </select></label>
+    <label>From <input type="text" name="since" placeholder="2026-10-09" value="{{ filters.get('since', '') }}"></label>
+    <label>To <input type="text" name="until" placeholder="2026-10-10" value="{{ filters.get('until', '') }}"></label>
+    <label>Sort
+      <select name="sort">
+        <option value="score" {{ 'selected' if filters.get('sort') != 'time' }}>Score</option>
+        <option value="time" {{ 'selected' if filters.get('sort') == 'time' }}>Newest</option>
+      </select></label>
+    <noscript><button type="submit">Filter</button></noscript>
+  </form>
+  <div id="results">
+  {% include "_results.html" %}
+  </div>
+</section>
 </div>
 {% endblock %}

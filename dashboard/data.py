@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from datetime import datetime
 from typing import Any
@@ -144,9 +145,11 @@ def session_detail(conn: sqlite3.Connection, session_id: str) -> dict[str, Any] 
         return None
     hits = _loads(row["hits"], [])
     event_family: dict[str, set[str]] = {}
+    event_rules: dict[str, list[str]] = {}
     for hit in hits:
         for event_id in hit["evidence"]:
             event_family.setdefault(event_id, set()).add(hit["family"])
+            event_rules.setdefault(event_id, []).append(hit["rule_id"])
 
     events: list[dict[str, Any]] = []
     previous: datetime | None = None
@@ -169,6 +172,7 @@ def session_detail(conn: sqlite3.Connection, session_id: str) -> dict[str, Any] 
                 "hash": stored["hash"],
                 "families": families,
                 "family": families[0] if families else "none",
+                "rules": event_rules.get(event_id, []),
                 "gap": gap if gap > GAP_SECONDS else 0,
                 "summary": summarize(event),
             }
@@ -198,6 +202,8 @@ def session_detail(conn: sqlite3.Connection, session_id: str) -> dict[str, Any] 
         "linked": [dict(r) for r in linked],
         "ml_score": row["ml_score"],
         "ml_why": row["ml_why"],
+        "ml_factors": ml_factors(row["ml_why"]),
+        "segments": score_segments(hits),
         "disagrees": disagrees(row["verdict"], row["ml_score"]),
         "actor_score": row["actor_score"],
         "actor_verdict": row["actor_verdict"],
@@ -260,3 +266,152 @@ def pqc_share(conn: sqlite3.Connection) -> dict[str, Any]:
         share = c["offered"] / c["sessions"] if c["sessions"] else None
         bars.append({"verdict": verdict, **c, "share": share, "width": round((share or 0) * 300)})
     return {"bars": bars, "total": sum(c["sessions"] for c in counts.values())}
+
+
+_FACTOR = re.compile(r"([a-z0-9 ]+?) = (-?[0-9.]+) pushes toward (malicious|benign)")
+
+
+def ml_factors(ml_why: str | None) -> list[dict[str, Any]]:
+    """Split the model's explanation into its named factors, for the factor list."""
+    if not ml_why or "Biggest factors:" not in ml_why:
+        return []
+    tail = ml_why.split("Biggest factors:", 1)[1]
+    return [
+        {"name": name.strip(), "value": value, "toward": toward}
+        for name, value, toward in _FACTOR.findall(tail)
+    ]
+
+
+def score_segments(hits: list[dict[str, Any]], width: int = 600) -> dict[str, Any]:
+    """Each rule's weight as a run of one bar, in rule order.
+
+    The bar spans the larger of 100 and the summed weights, so a session whose rules add up
+    past the 100 cap still shows every rule; `scale` places the threshold marks on it.
+    """
+    ordered = sorted(hits, key=lambda h: int(h["rule_id"][1:]))
+    total = sum(h["weight"] for h in ordered)
+    scale = width / max(total, 100)
+    segments, x = [], 0.0
+    for hit in ordered:
+        w = hit["weight"] * scale
+        segments.append({"rule_id": hit["rule_id"], "family": hit["family"], "x": x, "w": w})
+        x += w
+    return {"runs": segments, "scale": scale, "total": total, "cap": 100 * scale}
+
+
+def overview(conn: sqlite3.Connection) -> dict[str, Any]:
+    """Headline numbers for the top of the sessions page, from one pass over the findings."""
+    verdicts = {"Noteworthy": 0, "Suspicious": 0, "Benign": 0}
+    disagreements = 0
+    reviewed = 0
+    actors: dict[str, str] = {}
+    labelled = {r[0] for r in conn.execute("SELECT session_id FROM labels")}
+    for row in conn.execute(
+        "SELECT session_id, actor_id, verdict, hits, ml_score, actor_verdict FROM findings"
+    ):
+        effective = _effective(row["verdict"], row["actor_verdict"], len(_loads(row["hits"], [])))
+        verdicts[effective] += 1
+        disagreements += disagrees(row["verdict"], row["ml_score"])
+        reviewed += row["session_id"] in labelled
+        actors[row["actor_id"]] = max(
+            (actors.get(row["actor_id"], "Benign"), row["actor_verdict"] or "Benign"),
+            key=lambda v: _ORDER[v],
+        )
+    total = sum(verdicts.values())
+    events = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+    tokens = conn.execute(
+        "SELECT COUNT(DISTINCT honeytoken_id) FROM events WHERE honeytoken_id IS NOT NULL"
+    ).fetchone()[0]
+    span = conn.execute("SELECT MIN(ts), MAX(ts) FROM events").fetchone()
+    bar, x = [], 0.0
+    for verdict in ("Noteworthy", "Suspicious", "Benign"):
+        w = verdicts[verdict] / total * 1000 if total else 0
+        bar.append({"verdict": verdict, "count": verdicts[verdict], "x": x, "w": w})
+        x += w
+    return {
+        "sessions": total,
+        "verdicts": verdicts,
+        "bar": bar,
+        "events": events,
+        "actors": len(actors),
+        "noteworthy_actors": sum(v == "Noteworthy" for v in actors.values()),
+        "honeytokens": tokens,
+        "disagreements": disagreements,
+        "reviewed": reviewed,
+        "first": span[0],
+        "last": span[1],
+        "has_model": conn.execute(
+            "SELECT 1 FROM findings WHERE ml_score IS NOT NULL LIMIT 1"
+        ).fetchone()
+        is not None,
+    }
+
+
+def list_actors(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    by_actor: dict[str, dict[str, Any]] = {}
+    for row in conn.execute(
+        "SELECT f.actor_id, f.verdict, f.score, f.actor_score, f.actor_verdict, f.rule_ids,"
+        " s.service, s.src_ip, s.first_seen, s.last_seen"
+        " FROM findings f JOIN sessions s ON s.session_id = f.session_id"
+    ):
+        a = by_actor.setdefault(
+            row["actor_id"],
+            {
+                "actor_id": row["actor_id"],
+                "sessions": 0,
+                "services": set(),
+                "ips": set(),
+                "rules": set(),
+                "score": 0,
+                "verdict": "Benign",
+                "first_seen": row["first_seen"],
+                "last_seen": row["last_seen"],
+                "counts": {"Noteworthy": 0, "Suspicious": 0, "Benign": 0},
+            },
+        )
+        a["sessions"] += 1
+        a["services"].add(row["service"])
+        a["ips"].add(row["src_ip"])
+        a["rules"].update(_loads(row["rule_ids"], []))
+        a["counts"][row["verdict"]] += 1
+        a["score"] = max(a["score"], row["actor_score"] or 0, row["score"])
+        a["verdict"] = max(
+            (a["verdict"], row["actor_verdict"] or "Benign", row["verdict"]),
+            key=lambda v: _ORDER[v],
+        )
+        a["first_seen"] = min(a["first_seen"], row["first_seen"])
+        a["last_seen"] = max(a["last_seen"], row["last_seen"])
+    out = []
+    for a in by_actor.values():
+        a["services"] = sorted(a["services"])
+        a["ips"] = sorted(a["ips"])
+        a["rules"] = sorted(a["rules"], key=lambda r: int(r[1:]))
+        out.append(a)
+    out.sort(key=lambda a: (-_ORDER[a["verdict"]], -a["score"], -a["sessions"]))
+    return out
+
+
+def actor_detail(conn: sqlite3.Connection, actor_id: str) -> dict[str, Any] | None:
+    actor = next((a for a in list_actors(conn) if a["actor_id"] == actor_id), None)
+    if actor is None:
+        return None
+    sessions = list_findings(conn, {"actor": actor_id, "sort": "time"})
+    sessions.sort(key=lambda r: r["first_seen"])
+    explanation = conn.execute(
+        "SELECT actor_explanation FROM findings WHERE actor_id=? AND actor_explanation IS NOT NULL"
+        " ORDER BY actor_score DESC LIMIT 1",
+        (actor_id,),
+    ).fetchone()
+    by_service: dict[str, int] = {}
+    for s in sessions:
+        by_service[s["service"]] = by_service.get(s["service"], 0) + 1
+    most = max(by_service.values()) if by_service else 1
+    return {
+        **actor,
+        "explanation": explanation[0] if explanation else "",
+        "session_rows": sessions,
+        "by_service": [
+            {"service": k, "count": v, "w": round(v / most * 240)}
+            for k, v in sorted(by_service.items(), key=lambda kv: -kv[1])
+        ],
+    }

@@ -1,33 +1,54 @@
 {% extends "base.html" %}
+{% from "_macros.html" import verdict %}
 {% block title %}Report {{ s.session_id }}{% endblock %}
+{% block topbar %}
+  <div>
+    <div class="crumbs noprint"><a href="/session/{{ s.session_id }}">Back to the session</a></div>
+    <h1>Incident report</h1>
+    <p class="muted small mono">{{ s.session_id }} · {{ s.service }} · {{ s.src_ip }} · {{ s.actor_id }} · {{ s.first_seen|when }} to {{ s.last_seen|when }} UTC</p>
+  </div>
+{% endblock %}
 {% block content %}
-<h1>Incident report</h1>
-<p>Session {{ s.session_id }} · {{ s.service }} · {{ s.src_ip }} · actor {{ s.actor_id }}<br>
-{{ s.first_seen }} to {{ s.last_seen }}</p>
-<p><span class="badge verdict-{{ s.effective_verdict }}">{{ s.effective_verdict }}</span> score {{ s.actor_score if s.effective_verdict != s.verdict else s.score }} · review label: {{ s.label }}</p>
-{% if s.actor_verdict != s.verdict %}<p class="muted">This session alone: {{ s.verdict }} ({{ s.score }}). Combined across the actor's sessions: {{ s.actor_verdict }} ({{ s.actor_score }}).</p>{% endif %}
-<h2>Why</h2>
-<pre class="explanation">{{ s.explanation }}</pre>
-{% if s.ml_score is not none %}<h2>Model second opinion</h2>
-<p>{{ s.ml_why }}</p>{% endif %}
-<h2>Rules matched</h2>
-<ul>
-{% for h in s.hits %}<li><strong>{{ h.rule_id }} {{ h.name }}</strong> ({{ h.family }}, {{ h.confidence }}): needs {{ h.threshold }}; saw {{ h.measured }}</li>{% else %}<li>None</li>{% endfor %}
-</ul>
-<h2>Events</h2>
-<table>
-<thead><tr><th>Time</th><th>Action</th><th>Detail</th><th>Hash</th></tr></thead>
-<tbody>
-{% for e in s.events %}
-<tr><td>{{ e.event.ts }}</td><td>{{ e.event.action.value }}</td><td>{{ e.summary }}</td><td>{{ e.hash[:16] }}</td></tr>
-{% endfor %}
-</tbody>
-</table>
-<h2>Evidence integrity</h2>
-{% if chain.verified %}
-<p>The hash chain is intact: {{ chain.events_checked }} stored events match the log archive.</p>
-{% else %}
-<p class="banner">The hash chain failed at event {{ chain.first_problem.event_id }}: {{ chain.first_problem.reason }}.</p>
-{% endif %}
-<p class="muted">Use your browser's print function to save this page as a PDF.</p>
+<div class="stack">
+<section class="panel"><div class="panel-body">
+  <div class="row">{{ verdict(s.effective_verdict, 'lg') }}<b>score {{ s.actor_score if s.effective_verdict != s.verdict else s.score }}</b><span class="muted">review label: {{ s.label }}</span></div>
+  {% if s.actor_verdict != s.verdict %}<p class="muted small">This session alone: {{ s.verdict }} ({{ s.score }}). Combined across the actor's sessions: {{ s.actor_verdict }} ({{ s.actor_score }}).</p>{% endif %}
+</div></section>
+
+<section class="panel"><div class="panel-head"><h2>Why</h2></div><div class="panel-body"><pre class="explain">{{ s.explanation }}</pre></div></section>
+
+{% if s.ml_score is not none %}<section class="panel"><div class="panel-head"><h2>Model second opinion</h2></div><div class="panel-body"><p>{{ s.ml_why }}</p></div></section>{% endif %}
+
+<section class="panel"><div class="panel-head"><h2>Rules matched</h2></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col">Rule</th><th scope="col">Family</th><th scope="col">Confidence</th><th scope="col">Needs</th><th scope="col">Saw</th></tr></thead>
+    <tbody>
+    {% for h in s.hits %}<tr><td><span class="rule-id">{{ h.rule_id }}</span> {{ h.name }}</td><td><span class="fam fam-{{ h.family }}">{{ h.family }}</span></td><td>{{ h.confidence }}</td><td>{{ h.threshold }}</td><td>{{ h.measured }}</td></tr>
+    {% else %}<tr><td colspan="5" class="muted">None</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="panel"><div class="panel-head"><h2>Events</h2></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col">Time</th><th scope="col">Action</th><th scope="col">Detail</th><th scope="col">Hash</th></tr></thead>
+    <tbody>
+    {% for e in s.events %}
+    <tr><td class="mono">{{ e.event.ts }}</td><td>{{ e.event.action.value }}</td><td class="mono">{{ e.summary }}</td><td class="mono">{{ e.hash[:16] }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="panel"><div class="panel-head"><svg class="icon"><use href="#i-chain"/></svg><h2>Evidence integrity</h2></div>
+  <div class="panel-body">
+  {% if chain.verified %}
+    <div class="callout good"><svg class="icon"><use href="#i-check"/></svg>The hash chain is intact: {{ chain.events_checked }} stored events match the log archive.</div>
+  {% else %}
+    <div class="callout bad"><svg class="icon"><use href="#i-alert"/></svg>The hash chain failed at event {{ chain.first_problem.event_id }}: {{ chain.first_problem.reason }}.</div>
+  {% endif %}
+  <p class="muted small noprint">Use your browser's print function to save this page as a PDF.</p>
+  </div>
+</section>
+</div>
 {% endblock %}

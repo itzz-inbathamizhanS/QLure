@@ -1,13 +1,18 @@
 {% extends "base.html" %}
 {% block title %}Q-Lure login{% endblock %}
-{% block header %}{% endblock %}
-{% block content %}
-<h1>Q-Lure</h1>
-<form class="panel" method="post" action="/login">
-  <label>Password
-    <input type="password" name="password" autocomplete="current-password" autofocus required>
-  </label>
-  {% if error %}<p class="banner">{{ error }}</p>{% endif %}
-  <button type="submit">Log in</button>
-</form>
+{% block body %}
+<main class="login">
+  <div class="panel login-card">
+    {% include "_brand.html" %}
+    <h1>Sign in</h1>
+    <p class="muted small">Investigator console for the Q-Lure decoys. This page is served on localhost only.</p>
+    <form method="post" action="/login">
+      <label>Password
+        <input type="password" name="password" autocomplete="current-password" autofocus required>
+      </label>
+      {% if error %}<div class="callout bad" role="alert"><svg class="icon"><use href="#i-alert"/></svg>{{ error }}</div>{% endif %}
+      <button type="submit"><svg class="icon"><use href="#i-lock"/></svg>Log in</button>
+    </form>
+  </div>
+</main>
 {% endblock %}
