@@ -108,7 +108,7 @@ Roadmap phases 0 to 4 are in place except P4.5 (the hosted snapshot rebuild). Ta
 
 Show the dashboard on the hosted Vercel snapshot or live on your own machine, with the
 same walkthrough for both. See [docs/DEMO.md](docs/DEMO.md) for the steps, the commands for
-localhost, and troubleshooting. Reviewers: [docs/REVIEWER.md](docs/REVIEWER.md) is a 5-minute walkthrough from a fresh clone with no Docker.
+localhost, and troubleshooting. Reviewers: [docs/REVIEWER.md](docs/REVIEWER.md) is a 5-minute walkthrough from a fresh clone with no Docker. On Windows, follow [docs/RUN_ON_WINDOWS.md](docs/RUN_ON_WINDOWS.md) (sample data, live decoys or Docker).
 The hosted snapshot is built outside this repository (ROADMAP P4.5 is not done), so it may not show
 the newest pages. For a populated dashboard from a fresh clone, see Sample data below.
 
