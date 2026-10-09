@@ -92,6 +92,11 @@ Show the dashboard on the hosted Vercel snapshot or live on your own machine, wi
 same walkthrough for both. See [docs/DEMO.md](docs/DEMO.md) for the steps, the commands for
 localhost, and troubleshooting.
 
+## Detection rules
+
+The ten rules that score each session, with their weights, thresholds and what each one
+detects, are listed in [docs/RULES.md](docs/RULES.md).
+
 ## Domain scanner
 
 `/scanner` checks a domain's TLS setup and how ready it is for post-quantum cryptography. The checks

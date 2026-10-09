@@ -27,6 +27,13 @@ function Show-Menu {
     Write-Host "4) Use stolen SSH creds  - log in with the leaked password"
     Write-Host "5) Use stolen API key    - call the real API with a planted key"
     Write-Host "6) Show the dashboard URL"
+    Write-Host "7) SQL injection probe   - injection pattern on the web page (R5)"
+    Write-Host "8) Path traversal probe  - read a file outside the web root"
+    Write-Host "9) Scanner user agent    - same page, with a scanner's browser string"
+    Write-Host "10) Show cmd.exe curl commands for the audience"
+    Write-Host "11) FTP Brute-force      - try logging into the FTP decoy"
+    Write-Host "12) Database Probes      - probe MySQL and Redis ports"
+    Write-Host "A) Run All Automated     - runs 1, 2, 3, 7, 8, 9, 11, 12 in one go"
     Write-Host "0) Exit"
     Write-Host ""
 }
@@ -59,7 +66,7 @@ function Step-BruteForce {
 
 function Step-FindLeak {
     Write-Host "`n[Find the leaked file] reading $WebBase/backup/config.bak ..." -ForegroundColor Cyan
-    $content = curl.exe -s "$WebBase/backup/config.bak"
+    $content = (curl.exe -s "$WebBase/backup/config.bak") -join "`n"
     Write-Host $content
     if ($content -match "password\s*=\s*(\S+)") {
         $script:LeakedPassword = $Matches[1]
@@ -92,6 +99,71 @@ function Step-UseApiKey {
     Write-Host "Check the dashboard: the web leak, SSH session and this API call now link into one actor - the full kill chain." -ForegroundColor Yellow
 }
 
+function Step-Sqli {
+    Write-Host "`n[SQL injection probe] sending an injection pattern to the web page (rule R5)" -ForegroundColor Cyan
+    $code = curl.exe -s -o NUL -w "%{http_code}" "$WebBase/?id=1%27%20OR%20%271%27%3D%271"
+    Write-Host "  GET /?id=1' OR '1'='1  -> $code"
+    Write-Host "Done. Check the dashboard: this session should show R5 (injection pattern)." -ForegroundColor Yellow
+}
+
+function Step-Traversal {
+    Write-Host "`n[Path traversal probe] asking for a file outside the web root" -ForegroundColor Cyan
+    $code = curl.exe -s -o NUL -w "%{http_code}" "$WebBase/download?file=../../../../etc/passwd"
+    Write-Host "  GET /download?file=../../../../etc/passwd  -> $code"
+    Write-Host "Done. Check the dashboard: this visitor should show a traversal attempt." -ForegroundColor Yellow
+}
+
+function Step-Scanner {
+    Write-Host "`n[Scanner user agent] same page, with a scanner's browser string" -ForegroundColor Cyan
+    $code = curl.exe -s -o NUL -w "%{http_code}" -A "sqlmap/1.8#stable (https://sqlmap.org)" "$WebBase/"
+    Write-Host "  GET /  with User-Agent sqlmap  -> $code"
+    Write-Host "Done. Check the dashboard: the scanner user agent is recorded on this session." -ForegroundColor Yellow
+}
+
+function Step-FtpBruteForce {
+    Write-Host "`n[FTP Brute Force] trying passwords on FTP (port 2121)" -ForegroundColor Cyan
+    $passwords = @("admin", "12345", "root")
+    foreach ($pw in $passwords) {
+        Write-Host "  Trying admin:$pw"
+        curl.exe -s -o NUL "ftp://admin:$pw@127.0.0.1:2121/"
+        Start-Sleep -Milliseconds 150
+    }
+    Write-Host "Done. Check dashboard for FTP events." -ForegroundColor Yellow
+}
+
+function Step-MySqlRedis {
+    Write-Host "`n[MySQL & Redis Probe] probing ports 3306 and 6379" -ForegroundColor Cyan
+    Write-Host "  Connecting to MySQL (3306)..."
+    try { $c1 = New-Object System.Net.Sockets.TcpClient("127.0.0.1", 3306); $c1.Close() } catch {}
+    Write-Host "  Connecting to Redis (6379)..."
+    try { $c2 = New-Object System.Net.Sockets.TcpClient("127.0.0.1", 6379); $c2.Close() } catch {}
+    Write-Host "Done. Check dashboard for database probes." -ForegroundColor Yellow
+}
+
+function Step-AllInOne {
+    Write-Host "`n[Running All Automated Scenarios]" -ForegroundColor Magenta
+    Step-Recon
+    Step-BruteForce
+    Step-FindLeak
+    Step-Sqli
+    Step-Traversal
+    Step-Scanner
+    Step-FtpBruteForce
+    Step-MySqlRedis
+    Write-Host "`nAll automated scenarios complete! Refresh your dashboard." -ForegroundColor Green
+}
+
+function Show-CmdCommands {
+    Write-Host "`nCopy these into Command Prompt (cmd.exe). Each line is one step:" -ForegroundColor Magenta
+    Write-Host '  curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1:8080/login'
+    Write-Host '  curl.exe -s http://127.0.0.1:8080/backup/config.bak'
+    Write-Host '  curl.exe -s -o NUL -w "%{http_code}" "http://127.0.0.1:8080/?id=1%27%20OR%20%271%27%3D%271"'
+    Write-Host '  curl.exe -s -o NUL -w "%{http_code}" "http://127.0.0.1:8080/download?file=../../../../etc/passwd"'
+    Write-Host '  curl.exe -s -o NUL -w "%{http_code}" -A "sqlmap/1.8#stable" http://127.0.0.1:8080/'
+    Write-Host '  curl.exe -s -H "X-API-Key: qlk_decoy_7f3a9c21e5d84b0a" http://127.0.0.1:8081/api/v1/users'
+    Write-Host "In cmd.exe, use %% instead of % only inside .bat files; at the prompt, a single % works." -ForegroundColor DarkGray
+}
+
 :menu while ($true) {
     Show-Menu
     $choice = Read-Host "Pick a step"
@@ -102,7 +174,15 @@ function Step-UseApiKey {
         "4" { Step-UseSsh }
         "5" { Step-UseApiKey }
         "6" { Write-Host "Dashboard: http://127.0.0.1:9000" -ForegroundColor Green }
+        "7" { Step-Sqli }
+        "8" { Step-Traversal }
+        "9" { Step-Scanner }
+        "10" { Show-CmdCommands }
+        "11" { Step-FtpBruteForce }
+        "12" { Step-MySqlRedis }
+        "A" { Step-AllInOne }
+        "a" { Step-AllInOne }
         "0" { break menu }
-        default { Write-Host "Pick a number from the menu." -ForegroundColor Red }
+        default { Write-Host "Pick a valid option from the menu." -ForegroundColor Red }
     }
 }

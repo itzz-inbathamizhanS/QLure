@@ -175,7 +175,32 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
 
     @app.post("/refresh")
     async def refresh() -> Response:
-        correlate_store.run(conn())
+        def _run_correlation():
+            c = conn()
+            try:
+                correlate_store.run(c)
+            finally:
+                c.close()
+                
+        await run_in_threadpool(_run_correlation)
+        return RedirectResponse("/", status_code=303)
+
+    @app.post("/clear")
+    async def clear_data() -> Response:
+        c = conn()
+        try:
+            for table in ["events", "sessions", "actors", "findings", "forwarder_state", "labels"]:
+                c.execute(f"DELETE FROM {table}")
+            c.commit()
+        finally:
+            c.close()
+        
+        logs_dir = Path(os.environ.get("QLURE_LOGS", "logs"))
+        for log_file in logs_dir.glob("*.jsonl"):
+            try:
+                log_file.write_text("", encoding="utf-8")
+            except OSError:
+                pass
         return RedirectResponse("/", status_code=303)
 
     @app.get("/session/{session_id}", response_class=HTMLResponse)
