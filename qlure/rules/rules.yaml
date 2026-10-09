@@ -82,6 +82,51 @@ rules:
     threshold: {families: 3}
     threshold_text: "3 or more families in order (recon, credential, misuse)"
 
+# Labels only: these never change a weight, threshold or verdict.
+technique_map:
+  # R5 kind -> ATT&CK IDs. A hit carries the union for the kinds actually matched.
+  r5_kinds:
+    sqli: [T1190]
+    xss: [T1190]
+    traversal: [T1190]
+    lfi: [T1190]
+    injection: [T1190]
+    command_injection: [T1059.004]
+    webshell: [T1505.003]
+    log4shell: [T1190]
+    spring4shell: [T1190]
+    shellshock: [T1190]
+    ssrf: [T1190]
+  # R8 command category -> ATT&CK IDs and a regex (case-insensitive) on the command line.
+  r8_categories:
+    discovery:
+      ids: [T1082]
+      pattern: "^\\s*(?:whoami|id|uname|ps|ls|pwd|cat|env|hostname|ifconfig|ip|history|uptime|w|df|free)\\b"
+    account_discovery:
+      ids: [T1033]
+      pattern: "^\\s*(?:whoami|id|w)\\b"
+    download:
+      ids: [T1105]
+      pattern: "\\b(?:wget|curl|tftp|scp)\\b"
+    persistence_ssh_key:
+      ids: [T1098.004]
+      pattern: "authorized_keys"
+    persistence_cron:
+      ids: [T1053.003]
+      pattern: "\\b(?:crontab|cron)\\b"
+    privilege_escalation:
+      ids: [T1548.003]
+      pattern: "(?:^|[;&|]\\s*)(?:sudo|su)\\b|\\bfind\\b.*-perm\\s+-?4000"
+    lateral_movement:
+      ids: [T1021.004]
+      pattern: "(?:^|[;&|]\\s*)ssh\\s+(?!-keygen)\\S|\\bscp\\b.*\\S:\\S"
+    exfiltration:
+      ids: [T1048]
+      pattern: "\\b(?:nc|ncat|netcat)\\b|\\btar\\b.*\\|.*\\bbase64\\b|\\bbase64\\b.*\\|.*\\b(?:nc|ncat|netcat|curl)\\b"
+    crypto_mining:
+      ids: [T1496]
+      pattern: "xmrig|minerd|stratum\\+tcp"
+
 verdicts:
   suspicious: 30
   noteworthy: 60

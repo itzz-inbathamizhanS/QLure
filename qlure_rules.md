@@ -21,6 +21,33 @@ Each session is scored by the rules defined in `qlure/rules/rules.yaml`. A rule 
 | **R9** | Sensitive file access | misuse | 25 | medium | A sensitive file is read, such as `.env` or `config.bak` |
 | **R10** | Kill-chain progression | chain | 25 | high | Activity moves through several families (recon, credential, misuse) |
 
+## ATT&CK labels
+
+Labels only: they never change a weight, threshold or verdict. They are defined in `technique_map` in `qlure/rules/rules.yaml`.
+
+**R5** - a hit carries the union of the IDs for the kinds actually matched:
+
+| Kind | ATT&CK |
+|---|---|
+| `sqli`, `xss`, `traversal`, `lfi`, `injection`, `log4shell`, `spring4shell`, `shellshock`, `ssrf` | T1190 |
+| `command_injection` | T1059.004 |
+| `webshell` | T1505.003 |
+
+**R8** - the hit's `measured` text lists the command categories seen (`[categories: ...]`) and `attack` is the union of their IDs. Which commands count toward the threshold is unchanged.
+
+| Category | Examples | ATT&CK |
+|---|---|---|
+| discovery | whoami, id, uname, ps, ls | T1082 (+ T1033 for whoami, id, w) |
+| download | wget, curl, tftp, scp | T1105 |
+| persistence_ssh_key | authorized_keys | T1098.004 |
+| persistence_cron | crontab, cron | T1053.003 |
+| privilege_escalation | sudo, su, `find -perm -4000` | T1548.003 |
+| lateral_movement | ssh or scp to another host | T1021.004 |
+| exfiltration | nc, netcat, tar piped to base64 | T1048 |
+| crypto_mining | xmrig, minerd, stratum+tcp | T1496 |
+
+**R10** carries the union of the IDs of the recon, credential and misuse hits it chains.
+
 ## Important Notes
 > [!NOTE]
 > - **R7 alone** makes a session Noteworthy, because it has the largest weight.

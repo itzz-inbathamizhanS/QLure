@@ -44,7 +44,9 @@ def _injection() -> list[tuple[str, re.Pattern[str]]]:
     return [(kind, re.compile(p)) for kind, group in patterns.items() for p in group]
 
 
-def _hit(rule_id: str, measured: str, events: list[Event]) -> RuleHit:
+def _hit(
+    rule_id: str, measured: str, events: list[Event], attack: tuple[str, ...] | None = None
+) -> RuleHit:
     spec = load_config()["rules"][rule_id]
     ids = tuple(dict.fromkeys(e.event_id for e in events))
     times = [event_time(e) for e in events]
@@ -54,7 +56,7 @@ def _hit(rule_id: str, measured: str, events: list[Event]) -> RuleHit:
         family=spec["family"],
         weight=spec["weight"],
         confidence=spec["confidence"],
-        attack=tuple(spec["attack"]),
+        attack=tuple(spec["attack"]) if attack is None else attack,
         measured=measured,
         threshold=spec["threshold_text"],
         evidence=ids,
@@ -160,7 +162,14 @@ def r5_injection(session: Session) -> RuleHit | None:
         kinds |= kinds_here
     if not matched:
         return None
-    return _hit("R5", f"{'/'.join(sorted(kinds))} pattern in {len(matched)} request(s)", matched)
+    kind_ids = load_config()["technique_map"]["r5_kinds"]
+    ids = tuple(dict.fromkeys(i for k in sorted(kinds) for i in kind_ids.get(k, ())))
+    return _hit(
+        "R5",
+        f"{'/'.join(sorted(kinds))} pattern in {len(matched)} request(s)",
+        matched,
+        ids or None,
+    )
 
 
 def r6_scanner_tool(session: Session) -> RuleHit | None:
@@ -185,6 +194,26 @@ def r7_honeytoken_use(session: Session) -> RuleHit | None:
     return _hit("R7", f"planted secret used: {', '.join(tokens)}", used)
 
 
+@lru_cache(maxsize=1)
+def _r8_categories() -> list[tuple[str, tuple[str, ...], re.Pattern[str]]]:
+    spec = load_config()["technique_map"]["r8_categories"]
+    return [(n, tuple(v["ids"]), re.compile(v["pattern"], re.IGNORECASE)) for n, v in spec.items()]
+
+
+def _r8_labels(commands: list[Event]) -> tuple[list[str], tuple[str, ...]]:
+    """Category names and ATT&CK IDs for the commands (labels only, never scoring)."""
+    names: dict[str, None] = {}
+    ids: dict[str, None] = {}
+    for e in commands:
+        text = str((e.request or {}).get("command", ""))
+        for name, technique_ids, pattern in _r8_categories():
+            if pattern.search(text):
+                # account_discovery is the T1033 half of "discovery"; show one category name.
+                names["discovery" if name == "account_discovery" else name] = None
+                ids.update(dict.fromkeys(technique_ids))
+    return list(names), tuple(ids)
+
+
 def r8_post_login(session: Session) -> RuleHit | None:
     commands = [e for e in session.events if e.action.value == "command"]
     discovery = set(load_config()["lists"]["discovery_commands"])
@@ -198,10 +227,15 @@ def r8_post_login(session: Session) -> RuleHit | None:
             seen_danger.append(e)
         elif text.split()[:1] and text.split()[0] in discovery:
             seen_discovery.append(e)
+    names, ids = _r8_labels(commands)
+    tag = f" [categories: {', '.join(names)}]" if names else ""
     if seen_danger:
-        return _hit("R8", f"{len(seen_danger)} download or persistence command(s)", seen_danger)
+        text = f"{len(seen_danger)} download or persistence command(s){tag}"
+        return _hit("R8", text, seen_danger, ids or None)
     if len(seen_discovery) >= _threshold("R8", "discovery_commands"):
-        return _hit("R8", f"{len(seen_discovery)} discovery commands", seen_discovery)
+        return _hit(
+            "R8", f"{len(seen_discovery)} discovery commands{tag}", seen_discovery, ids or None
+        )
     return None
 
 
@@ -284,7 +318,7 @@ def r10_kill_chain(actor: Actor, hits: list[RuleHit]) -> RuleHit | None:
         family=spec["family"],
         weight=spec["weight"],
         confidence=spec["confidence"],
-        attack=tuple(spec["attack"]),
+        attack=tuple(dict.fromkeys(i for h in hits if h.family in FAMILY_ORDER for i in h.attack)),
         measured=", then ".join(f for f in FAMILY_ORDER if f in first),
         threshold=spec["threshold_text"],
         evidence=tuple(dict.fromkeys(evidence)),
