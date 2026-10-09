@@ -15,6 +15,7 @@ import uuid
 from collections.abc import Callable
 from functools import partial
 
+from decoys import content
 from decoys.common import BadProxyHeader, read_proxy_header
 from qlure.events import Action, Service, emit
 
@@ -48,7 +49,7 @@ def mysql_greeting(connection_id: int = 1) -> bytes:
 
 async def _handle(
     service: Service,
-    greeting: bytes,
+    greeting: bytes | Callable[[], bytes],
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
 ) -> None:
@@ -67,8 +68,9 @@ async def _handle(
     emit({**base, "action": Action.CONNECT})
     first = b""
     try:
-        if greeting:
-            writer.write(greeting)
+        data = greeting() if callable(greeting) else greeting  # FTP's banner can be changed live
+        if data:
+            writer.write(data)
             await writer.drain()
         first = await asyncio.wait_for(reader.read(1024), READ_TIMEOUT)
         if service is Service.REDIS and first:
@@ -91,8 +93,8 @@ async def _handle(
     emit({**base, "action": Action.DISCONNECT})
 
 
-LISTENERS: list[tuple[Service, int, bytes]] = [
-    (Service.FTP, 2121, FTP_BANNER),
+LISTENERS: list[tuple[Service, int, bytes | Callable[[], bytes]]] = [
+    (Service.FTP, 2121, content.ftp_greeting),
     (Service.MYSQL, 3306, mysql_greeting()),
     (Service.REDIS, 6379, b""),
 ]
@@ -101,7 +103,7 @@ LISTENERS: list[tuple[Service, int, bytes]] = [
 async def start(
     service: Service,
     port: int,
-    greeting: bytes,
+    greeting: bytes | Callable[[], bytes],
     host: str = "0.0.0.0",  # noqa: S104
 ) -> asyncio.Server:
     handler: Callable[..., object] = partial(_handle, service, greeting)

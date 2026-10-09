@@ -17,11 +17,10 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from decoys import honeytokens
+from decoys import content, honeytokens
 from decoys.common import fingerprint, read_capped, replay_ts
 from qlure.events import Action, Service, emit
 
-COMPANY = "Veltrix Logistics"  # fictional company used across every decoy
 SESSION_COOKIE = "VLXSESSID"
 SERVER_HEADER = "nginx/1.24.0"
 BODY_PREVIEW_CHARS = 2048
@@ -149,7 +148,9 @@ async def index() -> Response:
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request) -> Response:
-    return templates.TemplateResponse(request, "login.html", {"company": COMPANY, "error": None})
+    return templates.TemplateResponse(
+        request, "login.html", {"company": content.company_name(), "error": None}
+    )
 
 
 @app.post("/login", response_class=HTMLResponse)
@@ -158,7 +159,7 @@ async def login_submit(request: Request) -> Response:
     return templates.TemplateResponse(
         request,
         "login.html",
-        {"company": COMPANY, "error": "Invalid username or password."},
+        {"company": content.company_name(), "error": "Invalid username or password."},
         status_code=401,
     )
 
@@ -176,7 +177,9 @@ async def dotenv(request: Request) -> Response:
 
 @app.get("/backup/", response_class=HTMLResponse)
 async def backup_index(request: Request) -> Response:
-    return templates.TemplateResponse(request, "backup_index.html", {"company": COMPANY})
+    return templates.TemplateResponse(
+        request, "backup_index.html", {"company": content.company_name()}
+    )
 
 
 @app.get("/backup/config.bak", response_class=PlainTextResponse)

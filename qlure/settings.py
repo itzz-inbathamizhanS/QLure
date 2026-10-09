@@ -126,6 +126,11 @@ def settings_path() -> Path:
     return Path(os.environ.get("QLURE_SETTINGS", "data/settings.json"))
 
 
+def content_path() -> Path:
+    """Where the decoys' read-only copy of the fake-content settings is written."""
+    return Path(os.environ.get("QLURE_CONTENT", str(settings_path().with_name("content.json"))))
+
+
 def load_settings(path: Path | None = None) -> dict[str, Any]:
     """The saved settings merged over the defaults. Missing or unreadable file means defaults."""
     merged = defaults()
@@ -225,12 +230,22 @@ def apply_change(
     tmp = target.with_suffix(".tmp")
     tmp.write_text(json.dumps(valid, indent=2), encoding="utf-8")
     tmp.replace(target)
+    _publish_content(valid["content"])
     for key in changes:
         _audit(conn, who, key, _get(current, key), _get(valid, key), "applied", "")
     from qlure.correlate.rules import load_config  # local: avoid a circular import
 
     load_config.cache_clear()
     return True, "saved"
+
+
+def _publish_content(content: dict[str, Any]) -> None:
+    """The decoys read only this small file, never the full settings or the database."""
+    path = content_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(content, indent=2), encoding="utf-8")
+    tmp.replace(path)
 
 
 def _check_rule_tuning(valid: dict[str, Any]) -> str | None:

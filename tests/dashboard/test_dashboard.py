@@ -277,3 +277,49 @@ def test_pqc_chart_counts_ssh_sessions_by_verdict(client, env):
     html = client.get("/").text
     assert "quantum-safe key exchange" in html and "<svg" in html
     assert "does not detect quantum attacks" in html
+
+
+def test_content_settings_reach_the_decoys(client, env, tmp_path, monkeypatch):
+    import asyncio
+
+    from decoys.banners import listeners
+    from qlure.events import Service
+
+    monkeypatch.setenv("QLURE_CONTENT", str(tmp_path / "runtime" / "content.json"))
+    assert (
+        "Veltrix Logistics"
+        in TestClient(web_app, client=("198.51.100.5", 40404)).get("/login").text
+    )
+    r = client.post(
+        "/config",
+        data={
+            "content.company_name": "Northwind Freight",
+            "content.ftp_banner": "220 vsFTPd 3.0.5 ready",
+        },
+        follow_redirects=False,
+    )
+    assert "ok=1" in r.headers["location"]
+    assert (
+        "Northwind Freight"
+        in TestClient(web_app, client=("198.51.100.5", 40404)).get("/login").text
+    )
+
+    async def greeting():
+        server = await listeners.start(
+            Service.FTP, 0, listeners.content.ftp_greeting, host="127.0.0.1"
+        )
+        port = server.sockets[0].getsockname()[1]
+        reader, writer = await asyncio.open_connection("127.0.0.1", port)
+        writer.write(b"PROXY TCP4 198.51.100.5 10.0.0.1 40404 2121\r\n")
+        data = await asyncio.wait_for(reader.readline(), 5)
+        writer.close()
+        server.close()
+        return data
+
+    assert asyncio.run(greeting()) == b"220 vsFTPd 3.0.5 ready\r\n"
+    # A bad file falls back to the defaults instead of breaking the decoy.
+    (tmp_path / "runtime" / "content.json").write_text("not json")
+    assert (
+        "Veltrix Logistics"
+        in TestClient(web_app, client=("198.51.100.5", 40404)).get("/login").text
+    )

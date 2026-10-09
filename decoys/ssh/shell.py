@@ -178,6 +178,208 @@ def _cmd_clear(args: list[str], state: ShellState) -> str:
     return "\x1b[2J\x1b[H"
 
 
+def _lines(text: str) -> list[str]:
+    return text.splitlines()
+
+
+def _file_args(args: list[str]) -> list[str]:
+    plain, skip = [], False
+    for arg in args:
+        if skip:
+            skip = False
+        elif arg in ("-n", "-name"):
+            skip = True  # the next word is this option's value, not a file
+        elif not arg.startswith("-"):
+            plain.append(arg)
+    return plain
+
+
+def _count(args: list[str], default: int = 10) -> int:
+    for i, arg in enumerate(args):
+        if arg == "-n" and i + 1 < len(args) and args[i + 1].isdigit():
+            return int(args[i + 1])
+        if arg.startswith("-") and arg[1:].isdigit():
+            return int(arg[1:])
+    return default
+
+
+def _read_files(args: list[str], state: ShellState, name: str) -> list[tuple[str, str | None]]:
+    out: list[tuple[str, str | None]] = []
+    for arg in _file_args(args):
+        path = _resolve(state, arg)
+        out.append((arg, state.fs.files.get(path)))
+    return out
+
+
+def _cmd_head(args: list[str], state: ShellState) -> str:
+    n, out = _count(args), []
+    for arg, text in _read_files(args, state, "head"):
+        if text is None:
+            out.append(f"head: cannot open '{arg}' for reading: No such file or directory\n")
+        else:
+            out.append("".join(f"{ln}\n" for ln in _lines(text)[:n]))
+    return "".join(out)
+
+
+def _cmd_tail(args: list[str], state: ShellState) -> str:
+    n, out = _count(args), []
+    for arg, text in _read_files(args, state, "tail"):
+        if text is None:
+            out.append(f"tail: cannot open '{arg}' for reading: No such file or directory\n")
+        else:
+            out.append("".join(f"{ln}\n" for ln in _lines(text)[-n:]))
+    return "".join(out)
+
+
+def _cmd_wc(args: list[str], state: ShellState) -> str:
+    out = []
+    for arg, text in _read_files(args, state, "wc"):
+        if text is None:
+            out.append(f"wc: {arg}: No such file or directory\n")
+        else:
+            out.append(f"{len(_lines(text)):>4} {len(text.split()):>4} {len(text):>5} {arg}\n")
+    return "".join(out)
+
+
+def _cmd_grep(args: list[str], state: ShellState) -> str:
+    plain = _file_args(args)
+    if len(plain) < 2:
+        return ""
+    needle, out = plain[0].lower(), []
+    for arg, text in _read_files(plain[1:], state, "grep"):
+        if text is None:
+            out.append(f"grep: {arg}: No such file or directory\n")
+            continue
+        prefix = f"{arg}:" if len(plain) > 2 else ""
+        out += [f"{prefix}{ln}\n" for ln in _lines(text) if needle in ln.lower()]
+    return "".join(out)
+
+
+def _cmd_find(args: list[str], state: ShellState) -> str:
+    root = _resolve(state, args[0]) if args and not args[0].startswith("-") else state.cwd
+    prefix = root.rstrip("/") + "/"
+    hits = sorted(path for path in state.fs.files if path.startswith(prefix))
+    if "-name" in args and args.index("-name") + 1 < len(args):
+        needle = args[args.index("-name") + 1].strip("*")
+        hits = [h for h in hits if needle in posixpath.basename(h)]
+    return "".join(f"{h}\n" for h in hits)
+
+
+def _denied(name: str, args: list[str], state: ShellState) -> str:
+    target = _file_args(args)[-1] if _file_args(args) else ""
+    return f"{name}: cannot access '{target}': Permission denied\n"
+
+
+def _cmd_which(args: list[str], state: ShellState) -> str:
+    return "".join(f"/usr/bin/{a}\n" for a in _file_args(args) if a in COMMANDS or a == "cd")
+
+
+def _cmd_groups(args: list[str], state: ShellState) -> str:
+    return f"{state.user}\n"
+
+
+def _cmd_w(args: list[str], state: ShellState) -> str:
+    return (
+        " 10:41:07 up 41 days,  3:12,  1 user,  load average: 0.08, 0.03, 0.01\n"
+        "USER     TTY      FROM             LOGIN@   IDLE   WHAT\n"
+        f"{state.user:<8} pts/0    10.20.0.5        10:40    0.00s w\n"
+    )
+
+
+def _cmd_who(args: list[str], state: ShellState) -> str:
+    return f"{state.user}  pts/0        2026-10-09 10:40 (10.20.0.5)\n"
+
+
+def _cmd_last(args: list[str], state: ShellState) -> str:
+    return (
+        f"{state.user}  pts/0        10.20.0.5        Thu Oct  8 18:22   still logged in\n"
+        "reboot   system boot  5.15.0-101-gener Tue Aug 29 07:29   still running\n"
+    )
+
+
+def _cmd_netstat(args: list[str], state: ShellState) -> str:
+    return (
+        "Proto Recv-Q Send-Q Local Address           Foreign Address         State\n"
+        "tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN\n"
+        "tcp        0      0 10.20.0.14:22           10.20.0.5:51114         ESTABLISHED\n"
+    )
+
+
+def _cmd_systemctl(args: list[str], state: ShellState) -> str:
+    return "Failed to connect to bus: Operation not permitted\n"
+
+
+def _cmd_crontab(args: list[str], state: ShellState) -> str:
+    if "-l" in args:
+        return "0 2 * * * /home/deploy/app/backup.sh\n"
+    return "usage: crontab [-l]\n"
+
+
+def _cmd_ping(args: list[str], state: ShellState) -> str:
+    host = (_file_args(args) or ["host"])[0]
+    return f"ping: connect: Network is unreachable ({host})\n"
+
+
+def _cmd_ssh(args: list[str], state: ShellState) -> str:
+    host = (_file_args(args) or ["host"])[0]
+    return f"ssh: connect to host {host} port 22: Network is unreachable\n"
+
+
+def _cmd_nc(args: list[str], state: ShellState) -> str:
+    return "nc: Network is unreachable\n"
+
+
+def _cmd_python(args: list[str], state: ShellState) -> str:
+    if "--version" in args or "-V" in args:
+        return "Python 3.10.12\n"
+    return "Python 3.10.12 (main, Nov 20 2023, 15:14:05) [GCC 11.4.0] on linux\n>>> \n"
+
+
+def _cmd_interpreter(args: list[str], state: ShellState) -> str:
+    return ""  # a shell or interpreter that does nothing visible; nothing is ever run
+
+
+def _cmd_su(args: list[str], state: ShellState) -> str:
+    return "su: Authentication failure\n"
+
+
+def _cmd_passwd(args: list[str], state: ShellState) -> str:
+    return (
+        "passwd: Authentication token manipulation error\n"
+        f"passwd: password unchanged ({state.user})\n"
+    )
+
+
+def _cmd_apt(args: list[str], state: ShellState) -> str:
+    return (
+        "E: Could not open lock file /var/lib/dpkg/lock-frontend - open (13: Permission denied)\n"
+    )
+
+
+def _cmd_docker(args: list[str], state: ShellState) -> str:
+    return (
+        "permission denied while trying to connect to the Docker daemon socket at "
+        "unix:///var/run/docker.sock\n"
+    )
+
+
+def _cmd_git(args: list[str], state: ShellState) -> str:
+    return "fatal: not a git repository (or any of the parent directories): .git\n"
+
+
+def _cmd_tar(args: list[str], state: ShellState) -> str:
+    return "tar: Cannot open: Permission denied\n"
+
+
+def _cmd_export(args: list[str], state: ShellState) -> str:
+    return ""
+
+
+def _cmd_man(args: list[str], state: ShellState) -> str:
+    topic = (_file_args(args) or [""])[0]
+    return f"No manual entry for {topic}\n" if topic else "What manual page do you want?\n"
+
+
 COMMANDS: dict[str, Callable[[list[str], ShellState], str]] = {
     "whoami": _cmd_whoami,
     "id": _cmd_id,
@@ -198,6 +400,44 @@ COMMANDS: dict[str, Callable[[list[str], ShellState], str]] = {
     "ifconfig": _cmd_ip,
     "sudo": _cmd_sudo,
     "clear": _cmd_clear,
+    "head": _cmd_head,
+    "tail": _cmd_tail,
+    "wc": _cmd_wc,
+    "grep": _cmd_grep,
+    "find": _cmd_find,
+    "which": _cmd_which,
+    "groups": _cmd_groups,
+    "w": _cmd_w,
+    "who": _cmd_who,
+    "last": _cmd_last,
+    "netstat": _cmd_netstat,
+    "ss": _cmd_netstat,
+    "systemctl": _cmd_systemctl,
+    "crontab": _cmd_crontab,
+    "ping": _cmd_ping,
+    "ssh": _cmd_ssh,
+    "nc": _cmd_nc,
+    "python": _cmd_python,
+    "python3": _cmd_python,
+    "bash": _cmd_interpreter,
+    "sh": _cmd_interpreter,
+    "perl": _cmd_interpreter,
+    "su": _cmd_su,
+    "passwd": _cmd_passwd,
+    "apt": _cmd_apt,
+    "apt-get": _cmd_apt,
+    "docker": _cmd_docker,
+    "git": _cmd_git,
+    "tar": _cmd_tar,
+    "export": _cmd_export,
+    "man": _cmd_man,
+    "touch": lambda args, state: _denied("touch", args, state),
+    "mkdir": lambda args, state: _denied("mkdir", args, state),
+    "rm": lambda args, state: _denied("rm", args, state),
+    "mv": lambda args, state: _denied("mv", args, state),
+    "cp": lambda args, state: _denied("cp", args, state),
+    "chmod": lambda args, state: _denied("chmod", args, state),
+    "chown": lambda args, state: _denied("chown", args, state),
     "wget": lambda args, state: _cmd_network_fetch(args, state, "wget"),
     "curl": lambda args, state: _cmd_network_fetch(args, state, "curl"),
 }
