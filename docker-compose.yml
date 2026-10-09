@@ -9,8 +9,6 @@ x-decoy: &decoy
   image: qlure-decoy:phase1
   volumes:
     - ./logs:/var/log/qlure
-  networks:
-    decoynet: {}
   read_only: true
   tmpfs: [/tmp]
   cap_drop: [ALL]
@@ -85,6 +83,17 @@ services:
     networks:
       decoynet:
         ipv4_address: 172.30.0.13
+    mem_limit: 128m
+    cpus: 0.5
+    pids_limit: 64
+
+  forwarder:
+    <<: *decoy
+    command: qlure forward --follow --logs /var/log/qlure --db /var/lib/qlure/qlure.db
+    volumes:
+      - ./logs:/var/log/qlure:ro
+      - ./data:/var/lib/qlure
+    network_mode: none   # reads files only; needs no network at all
     mem_limit: 128m
     cpus: 0.5
     pids_limit: 64

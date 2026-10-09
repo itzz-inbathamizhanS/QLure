@@ -1,6 +1,6 @@
 """qlure command line.
 
-Phase 0 has `schema` and `validate`; capture, replay, eval and verify arrive in later phases.
+`schema`, `validate`, `forward` and `verify` so far; capture, replay and eval arrive later.
 """
 
 from __future__ import annotations
@@ -13,8 +13,12 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from qlure.events import Event, json_schema
+from qlure.store import db, forwarder
+from qlure.store.verify import verify
 
 SCHEMA_PATH = Path("docs/event.schema.json")
+DEFAULT_LOGS = Path("logs")
+DEFAULT_DB = Path("data/qlure.db")
 
 
 def _schema(args: argparse.Namespace) -> int:
@@ -49,6 +53,28 @@ def _validate(args: argparse.Namespace) -> int:
     return 1 if bad else 0
 
 
+def _forward(args: argparse.Namespace) -> int:
+    conn = db.connect(args.db)
+    if args.follow:
+        forwarder.follow(conn, args.logs)
+        return 0
+    stored, rejected = forwarder.forward_once(conn, args.logs)
+    print(f"stored {stored} new events, rejected {rejected} invalid lines")
+    return 0
+
+
+def _verify(args: argparse.Namespace) -> int:
+    checked, problem = verify(db.connect(args.db), args.logs)
+    if problem is None:
+        print(f"chain verified: {checked} events intact")
+        return 0
+    print(
+        f"VERIFY FAILED at event {problem.event_id} (#{problem.seq}): {problem.reason}",
+        file=sys.stderr,
+    )
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="qlure")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -61,6 +87,17 @@ def main(argv: list[str] | None = None) -> int:
     p_validate = sub.add_parser("validate", help="check JSONL event files against the schema")
     p_validate.add_argument("files", type=Path, nargs="+")
     p_validate.set_defaults(func=_validate)
+
+    for name, func, help_text in (
+        ("forward", _forward, "copy new JSONL events into the store"),
+        ("verify", _verify, "check the hash chain against the JSONL archive"),
+    ):
+        p = sub.add_parser(name, help=help_text)
+        p.add_argument("--logs", type=Path, default=DEFAULT_LOGS)
+        p.add_argument("--db", type=Path, default=DEFAULT_DB)
+        if name == "forward":
+            p.add_argument("--follow", action="store_true", help="keep running")
+        p.set_defaults(func=func)
 
     args = parser.parse_args(argv)
     return args.func(args)

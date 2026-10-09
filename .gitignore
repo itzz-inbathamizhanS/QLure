@@ -8,6 +8,8 @@ __pycache__/
 
 # Decoy output holds visitor IPs and typed text: never commit it.
 logs/
+# The query index built from the logs.
+data/
 # Raw captures stay local; only labels and pseudonymised exports are committed.
 captures/**/raw/
 captures/**/*.jsonl

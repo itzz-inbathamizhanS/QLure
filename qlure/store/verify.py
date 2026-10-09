@@ -1,0 +1,61 @@
+"""Verify the store against itself and against the JSONL archive."""
+
+from __future__ import annotations
+
+import sqlite3
+from dataclasses import dataclass
+from pathlib import Path
+
+from pydantic import ValidationError
+
+from qlure.events import Event
+from qlure.store.chain import GENESIS, canonical, link_hash
+
+
+@dataclass(frozen=True)
+class Problem:
+    seq: int
+    event_id: str
+    reason: str
+
+
+def _archive(log_dir: Path) -> dict[str, str]:
+    """event_id -> canonical JSON of what the JSONL files say today."""
+    found: dict[str, str] = {}
+    for path in sorted(log_dir.glob("*.jsonl")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                event = Event.model_validate_json(line)
+            except ValidationError:
+                continue
+            found[event.event_id] = canonical(event)
+    return found
+
+
+def verify(conn: sqlite3.Connection, log_dir: Path) -> tuple[int, Problem | None]:
+    """Walk the chain in order. Returns (events checked, first problem or None).
+
+    Checks each link's hash, that the stored event still matches the archived line,
+    and that the line has not been deleted.
+    """
+    archive = _archive(log_dir)
+    prev = GENESIS
+    checked = 0
+    for row in conn.execute("SELECT seq, event_id, raw, prev_hash, hash FROM events ORDER BY seq"):
+        seq, event_id = row["seq"], row["event_id"]
+        if row["prev_hash"] != prev:
+            return checked, Problem(
+                seq, event_id, "chain link broken: an earlier event was removed"
+            )
+        if link_hash(prev, row["raw"]) != row["hash"]:
+            return checked, Problem(seq, event_id, "stored event does not match its hash")
+        archived = archive.get(event_id)
+        if archived is None:
+            return checked, Problem(seq, event_id, "event is missing from the JSONL archive")
+        if archived != row["raw"]:
+            return checked, Problem(seq, event_id, "JSONL line was edited after it was stored")
+        prev = row["hash"]
+        checked += 1
+    return checked, None
