@@ -5,21 +5,67 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e '.[dev]'
+      # liboqs (post-quantum signatures) is built from source on first import; keep the build.
+      - uses: actions/cache@v4
+        with:
+          path: ~/_oqs
+          key: liboqs-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('pyproject.toml') }}
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: qlure schema --check
+      - name: attack-coverage
+        run: pytest -q tests/correlate/test_attack_coverage.py -v
+      - run: pytest -q
+
+  compose-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose file
+        run: docker compose config -q
+      # Every decoy, the watchdogs, the forwarder and the dashboard share one image
+      # (x-decoy anchor), so building one service builds them all. gateway pulls nginx only.
+      # Nothing is started and no secrets are needed.
+      - name: Build decoy image
+        run: docker compose build web
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install -e '.[dev]'
-      # liboqs (post-quantum signatures) is built from source on first import; keep the build.
-      - uses: actions/cache@v4
-        with:
-          path: ~/_oqs
-          key: liboqs-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
-      - run: ruff check .
-      - run: ruff format --check .
-      - run: qlure schema --check
-      - run: pytest -q
+      - run: pip install pip-audit
+      - name: pip-audit
+        run: |
+          set +e
+          pip-audit --skip-editable --format markdown --output audit.md
+          status=$?
+          {
+            echo "## pip-audit"
+            if [ -s audit.md ]; then cat audit.md; else echo "No known vulnerabilities found."; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $status

@@ -76,7 +76,7 @@ Done when a reviewer sees labelled attacks within 5 minutes of a fresh clone (se
 Other ideas (not scheduled): webhook alerts (off by default, dashboard side only), campaign clustering across actors, honeytoken rotation and canary links, ML drift check, `/healthz` and metrics, low-and-slow detection.
 
 ## Phase 4: hardening, ops, CI, docs
-- **P4.1** CI: attack-coverage job, `docker compose build` smoke test, `pip-audit` (S).
+- **P4.1** CI: attack-coverage job, `docker compose build` smoke test, `pip-audit` (S). Status: done (not yet run on GitHub).
 - **P4.2** `/healthz` and metrics on the dashboard (C2, S).
 - **P4.3** Webhook alerts, off by default (fixer, M).
 - **P4.4** Retention enforcement with a checkpoint anchor so the hash chain stays valid (fixer, L, do last). Proof: `pytest -q tests/store` and `qlure verify`.
