@@ -177,6 +177,39 @@ def _export(args: argparse.Namespace) -> int:
     return 0
 
 
+def _alert(args: argparse.Namespace) -> int:
+    from qlure import alerts
+    from qlure.settings import load_settings, mask_url
+
+    saved = load_settings()["alerts"]
+    min_verdict = args.min_verdict or saved["min_verdict"]
+    if args.dry_run:
+        try:
+            todo, more = alerts.pending(args.db, args.state, min_verdict)
+        except (ioc_export.ExportError, OSError) as exc:
+            print(f"alert: {exc}", file=sys.stderr)
+            return 1
+        for payload in todo:
+            print(json.dumps({k: v for k, v in payload.items() if not k.startswith("_")}))
+        print(f"dry run: {len(todo)} alert(s), +{more} more; nothing sent", file=sys.stderr)
+        return 0
+    url = args.url or os.environ.get("QLURE_ALERT_WEBHOOK") or saved["webhook_url"]
+    if not url:
+        print(
+            "alert: no webhook URL (--url, QLURE_ALERT_WEBHOOK or alerts.webhook_url)",
+            file=sys.stderr,
+        )
+        return 1
+    result = alerts.notify_new_noteworthy(args.db, args.state, url, min_verdict=min_verdict)
+    if result.error:
+        print(f"alert: {result.error}", file=sys.stderr)
+        return 1
+    print(
+        f"alert: sent {result.sent}, failed {result.failed}, +{result.more} more -> {mask_url(url)}"
+    )
+    return 2 if result.failed else 0
+
+
 def _watch_egress(args: argparse.Namespace) -> int:
     print(f"watching {args.proc_net} every {args.interval}s; alerts -> {args.out}", flush=True)
     try:
@@ -292,6 +325,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_export.add_argument("--out", type=Path, default=None, help="write to a file, not stdout")
     p_export.set_defaults(func=_export)
+
+    p_alert = sub.add_parser(
+        "alert", help="webhook alert for new Noteworthy findings (operator side)"
+    )
+    p_alert.add_argument("--db", type=Path, default=DEFAULT_DB)
+    p_alert.add_argument("--url", default=None, help="else QLURE_ALERT_WEBHOOK or the setting")
+    p_alert.add_argument("--state", type=Path, default=Path("data/alert-state.json"))
+    p_alert.add_argument("--min-verdict", choices=ioc_export.MIN_VERDICTS, default=None)
+    p_alert.add_argument("--dry-run", action="store_true", help="print payloads, send nothing")
+    p_alert.set_defaults(func=_alert)
 
     p_watch = sub.add_parser("watch-egress", help="alert when a decoy opens outbound connections")
     p_watch.add_argument("--proc-net", type=Path, default=Path("/proc/net"))

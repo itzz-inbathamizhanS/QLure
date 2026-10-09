@@ -16,6 +16,7 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
@@ -99,6 +100,55 @@ class Allowlist(BaseModel):
         return [str(ipaddress.ip_address(v)) for v in values]
 
 
+ALERT_URL_MAX = 500
+SECRET_KEYS = {"alerts.webhook_url"}
+
+
+def mask_url(url: Any) -> str:
+    """scheme://host/... for a webhook URL. The path and query are the secret part."""
+    if not isinstance(url, str) or not url:
+        return ""
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname or ""
+    except ValueError:
+        return "***"
+    if not parts.scheme or not host:
+        return "***"
+    return f"{parts.scheme}://{host}/\u2026"
+
+
+class Alerts(BaseModel):
+    """Operator-side webhook alerts. Empty URL means off. The URL is a secret."""
+
+    model_config = ConfigDict(extra="forbid")
+    webhook_url: str = ""
+    min_verdict: Literal["suspicious", "noteworthy"] = "noteworthy"
+
+    @field_validator("webhook_url")
+    @classmethod
+    def _valid_url(cls, value: str) -> str:
+        if value == "":
+            return value
+        if len(value) > ALERT_URL_MAX:
+            raise ValueError(f"too long (max {ALERT_URL_MAX} characters)")
+        if any(ord(c) < 33 or ord(c) == 127 for c in value):
+            raise ValueError("must not contain spaces or control characters")
+        try:
+            parts = urlsplit(value)
+            host = parts.hostname
+            parts.port  # noqa: B018 - raises ValueError on a bad port
+        except ValueError:
+            raise ValueError("not a valid URL") from None
+        if parts.scheme not in ("http", "https"):
+            raise ValueError("the scheme must be http or https")
+        if not host:
+            raise ValueError("the URL needs a host")
+        if "@" in parts.netloc:
+            raise ValueError("the URL must not contain embedded credentials")
+        return value
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     judge_mode: bool = False
@@ -107,6 +157,7 @@ class Settings(BaseModel):
     rules: RuleTuning = Field(default_factory=RuleTuning)
     allowlist: Allowlist = Field(default_factory=Allowlist)
     retention_days: int = Field(default=30, ge=1, le=365)
+    alerts: Alerts = Field(default_factory=Alerts)
 
     @field_validator("decoys")
     @classmethod
@@ -189,8 +240,8 @@ def audit(
         "ts": datetime.now(UTC).isoformat(),
         "who": who,
         "key": key,
-        "old_value": json.dumps(old),
-        "new_value": json.dumps(new),
+        "old_value": json.dumps(mask_url(old) if key in SECRET_KEYS else old),
+        "new_value": json.dumps(mask_url(new) if key in SECRET_KEYS else new),
         "outcome": outcome,
         "reason": reason,
     }
@@ -333,7 +384,22 @@ def rollback(conn: sqlite3.Connection, who: str, audit_id: int) -> tuple[bool, s
         return False, "only an applied change can be rolled back"
     if row["key"].startswith("data."):
         return False, "clearing data is recorded here but cannot be rolled back"
+    if row["key"] in SECRET_KEYS:
+        return False, "a secret setting is masked in the audit trail: set it again instead"
     return apply_change(conn, who, {row["key"]: json.loads(row["old_value"])})
+
+
+def masked(data: dict[str, Any]) -> dict[str, Any]:
+    """A copy of the settings that is safe to show or export: secret values are masked."""
+    out = copy.deepcopy(data)
+    for path in SECRET_KEYS:
+        *head, last = path.split(".")
+        node: Any = out
+        for part in head:
+            node = node.get(part) if isinstance(node, dict) else None
+        if isinstance(node, dict) and node.get(last):
+            node[last] = mask_url(node[last])
+    return out
 
 
 def schema() -> dict[str, Any]:
