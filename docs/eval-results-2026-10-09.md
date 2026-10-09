@@ -91,3 +91,34 @@ Session grouping needs a second path for same-IP, same-service, low-event sessio
 existing IP-based actor merge (which was deliberately kept narrow). That is a correlation-engine
 design change, not a weight or threshold tweak, so it is not made here; tuning-split weights and
 thresholds were left as they were, to avoid fitting the rules to this one capture.
+
+## Update, same day: fixed the session-fragmentation bug
+
+`qlure/correlate/sessions.py` now also merges a long, tight-gap run of events from one
+`(src_ip, service)` even when `client_fp` changes every request, as long as the run is at least
+6 events with no gap over 1 second (`BURST_GAP`, `MIN_BURST_EVENTS`). The gap is five times the
+slowest gap measured in the real Nikto run above (max 0.17s across 5,812 gaps); the minimum run
+length is far below that run's length and well above a one-off coincidence of two visitors behind
+one address clicking within a second of each other, which a new test drives through the real
+decoy to confirm it still never merges (`tests/correlate/test_burst.py`). All 115 tests pass.
+
+Re-running `qlure eval` on the same captures, nothing re-recorded:
+
+| | before | after |
+|---|---|---|
+| tuning sessions | 5431 | **18** |
+| tuning recall | 0.0015 | **0.27** |
+| tuning precision | 1.00 | 1.00 (unchanged) |
+| heldout sessions | 13 | 11 |
+| heldout recall | 0.00 | 0.00 (unchanged) |
+
+The Nikto run that was 1,671 one-request sessions is now one 30-second, 5,813-event session that
+scores Noteworthy. That confirms the fix: it did exactly what it was built for.
+
+Heldout recall is still 0 because its remaining misses are a different, deeper issue: `nmap -sV`
+against six ports and the one `sqlmap` request each produce a handful of events per service, and
+a verdict is decided per session, never per actor, so even a perfectly merged, perfectly
+attributed thin session can still sit under the Noteworthy bar alone. Fixing that means scoring an
+actor across its sessions, which is a bigger change to the finding model (one finding per session
+today, in the database schema and the dashboard both) and was deliberately left for later rather
+than rushed here.
