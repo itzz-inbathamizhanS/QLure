@@ -42,7 +42,7 @@ class Stub:
     def __init__(self, status=200, raises=False):
         self.calls, self.status, self.raises = [], status, raises
 
-    def __call__(self, url, body, timeout):
+    def __call__(self, url, body, timeout, pinned=None):
         self.calls.append((url, body, timeout))
         if self.raises:
             raise OSError("boom")
@@ -154,18 +154,101 @@ def test_state_is_bounded_and_corrupt_state_tolerated(tmp_path):
     assert alerts._load_state(state) == []
 
 
+def _record_connects(monkeypatch, stream=None):
+    import httpcore
+
+    seen = []
+
+    def fake(self, host, port, *a, **k):
+        seen.append((host, port))
+        if stream is None:
+            raise httpcore.ConnectError("stub")
+        return stream
+
+    monkeypatch.setattr(httpcore.SyncBackend, "connect_tcp", fake)
+    return seen
+
+
 def test_default_post_does_not_follow_redirects(monkeypatch):
     import httpx
 
     seen = {}
 
-    def fake(url, **kw):
-        seen.update(kw)
-        return httpx.Response(302)
+    class Client(httpx.Client):
+        def __init__(self, **kw):
+            seen.update(kw)
+            super().__init__(transport=httpx.MockTransport(lambda r: httpx.Response(302)))
 
-    monkeypatch.setattr(httpx, "post", fake)
-    assert alerts._httpx_post(URL, b"{}", 5) == 302
+    monkeypatch.setattr(httpx, "Client", Client)
+    assert alerts._httpx_post(URL, b"{}", 5, pinned=["93.184.216.34"]) == 302
     assert seen["follow_redirects"] is False and seen["timeout"] == 5
+
+
+def test_dns_rebinding_connects_only_to_validated_address(seeded, tmp_path, monkeypatch):
+    answers = iter([["93.184.216.34"], ["127.0.0.1"], ["127.0.0.1"], ["127.0.0.1"]])
+    calls = []
+    monkeypatch.setattr(alerts, "_resolve", lambda host: calls.append(host) or next(answers))
+    connects = _record_connects(monkeypatch)
+    res = alerts.notify_new_noteworthy(seeded, tmp_path / "s.json", URL, max_alerts=1)
+    assert res.sent == 0 and res.failed >= 1  # the stub connect fails; nothing was delivered
+    assert len(calls) == 1  # resolved exactly once
+    assert connects and {h for h, _ in connects} == {"93.184.216.34"}
+    assert {p for _, p in connects} == {443}
+
+
+def test_one_bad_address_among_several_is_refused(seeded, tmp_path, monkeypatch):
+    monkeypatch.setattr(alerts, "_resolve", lambda host: ["93.184.216.34", "169.254.169.254"])
+    stub = Stub()
+    res = alerts.notify_new_noteworthy(seeded, tmp_path / "s.json", URL, post=stub)
+    assert "loopback" in res.error and not stub.calls
+
+
+@pytest.mark.parametrize("addr", ["::ffff:127.0.0.1", "::ffff:169.254.169.254", "::", "0.0.0.0"])  # noqa: S104
+def test_mapped_and_unspecified_forms_refused(seeded, tmp_path, monkeypatch, addr):
+    monkeypatch.setattr(alerts, "_resolve", lambda host: [addr])
+    stub = Stub()
+    res = alerts.notify_new_noteworthy(seeded, tmp_path / "s.json", URL, post=stub)
+    assert "loopback" in res.error and not stub.calls
+
+
+def test_https_keeps_original_hostname_for_sni_and_verifies(monkeypatch):
+    import httpcore
+
+    seen = {}
+
+    class Stream:
+        def start_tls(self, ssl_context, server_hostname=None, timeout=None):
+            seen["sni"], seen["ctx"] = server_hostname, ssl_context
+            raise httpcore.ConnectError("stop")
+
+        def close(self):
+            pass
+
+    connects = _record_connects(monkeypatch, Stream())
+    with pytest.raises(__import__("httpx").ConnectError):
+        alerts._httpx_post(URL, b"{}", 5, pinned=["93.184.216.34"])
+    assert connects == [("93.184.216.34", 443)]
+    assert seen["sni"] == "hooks.example.test"
+    import ssl
+
+    assert seen["ctx"].verify_mode == ssl.CERT_REQUIRED and seen["ctx"].check_hostname
+
+
+def test_pinned_backend_never_uses_the_hostname():
+    class Inner:
+        def __init__(self):
+            self.hosts = []
+
+        def connect_tcp(self, host, port, *a, **k):
+            self.hosts.append(host)
+            if host == "93.184.216.34":
+                raise OSError("down")
+            return "ok"
+
+    inner = Inner()
+    backend = alerts._PinnedBackend(["93.184.216.34", "93.184.216.35"], inner)
+    assert backend.connect_tcp("hooks.example.test", 80) == "ok"
+    assert inner.hosts == ["93.184.216.34", "93.184.216.35"]
 
 
 def test_cli_dry_run_sends_nothing(seeded, tmp_path, capsys, monkeypatch):
