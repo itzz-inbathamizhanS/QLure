@@ -33,6 +33,7 @@ APPROVED_PORTS: dict[str, list[int]] = {
     "ftp": [2121],
     "mysql": [3306, 3307],
     "redis": [6379, 6380],
+    "docker": [2375],
 }
 # Names that must never become settings.
 FORBIDDEN_KEYS = {
@@ -101,7 +102,7 @@ class Allowlist(BaseModel):
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     judge_mode: bool = False
-    decoys: dict[Literal["web", "api", "ssh", "ftp", "mysql", "redis"], Decoy]
+    decoys: dict[Literal["web", "api", "ssh", "ftp", "mysql", "redis", "docker"], Decoy]
     content: Content = Field(default_factory=Content)
     rules: RuleTuning = Field(default_factory=RuleTuning)
     allowlist: Allowlist = Field(default_factory=Allowlist)

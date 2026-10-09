@@ -223,24 +223,33 @@ def blocklist_text(data: Export) -> str:
     return "\n".join(header + [str(ip) for ip in kept]) + "\n"
 
 
+_FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _cell(value: Any) -> Any:
+    """Neutralise spreadsheet formulas (OWASP CSV injection): prefix risky text with a quote."""
+    if isinstance(value, str) and value.startswith(_FORMULA_START):
+        return "'" + value
+    return value
+
+
 def csv_text(data: Export) -> str:
     buf = io.StringIO()
     writer = csv.writer(buf, lineterminator="\n")
     writer.writerow(CSV_COLUMNS)
     for ind in data.indicators:
-        writer.writerow(
-            [
-                ind.kind,
-                ind.value,
-                _stamp(ind.first_seen),
-                _stamp(ind.last_seen),
-                len(ind.sessions),
-                ";".join(sorted(ind.actors)),
-                ind.verdict,
-                ";".join(sorted(ind.rules, key=_rule_key)),
-                ";".join(sorted(ind.attacks)),
-            ]
-        )
+        row = [
+            ind.kind,
+            ind.value,
+            _stamp(ind.first_seen),
+            _stamp(ind.last_seen),
+            len(ind.sessions),
+            ";".join(sorted(ind.actors)),
+            ind.verdict,
+            ";".join(sorted(ind.rules, key=_rule_key)),
+            ";".join(sorted(ind.attacks)),
+        ]
+        writer.writerow([_cell(c) for c in row])
     return buf.getvalue()
 
 

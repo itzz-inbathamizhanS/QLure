@@ -41,6 +41,6 @@ qlure export --db data/qlure.db --format stix|csv|blocklist [--min-verdict suspi
 - `url-path`, `user-agent`, `credential-hash` and `honeytoken-id` have no STIX 2.1 pattern here,
   so they appear in the CSV only.
 - Values come from visitors. CSV cells that start with `=` may be read as formulas by a
-  spreadsheet, so open the CSV as text or import it instead of double-clicking it.
+  spreadsheet, so open the CSV as text or import it instead of double-clicking it; the CSV writer also prefixes any text cell starting with `=`, `+`, `-`, `@`, tab or carriage return with a single quote (`'`) to neutralise formula injection (blocklist and STIX are unchanged).
 - The `rules` and `attack_ids` of an indicator are the union over the sessions where it was seen.
 - The dashboard does not have a download route yet. That is a later task.

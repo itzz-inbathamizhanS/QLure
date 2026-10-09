@@ -24,6 +24,7 @@ INTERACTION_ACTION = {
     "ftp": "connect",
     "mysql": "connect",
     "redis": "connect",
+    "docker": "http_request",
 }
 TARGETS = {
     "precision": (">=", 0.90),
