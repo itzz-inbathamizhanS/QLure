@@ -15,3 +15,5 @@ captures/**/raw/
 captures/**/*.jsonl
 captures/**/*.pcap
 !captures/**/labels*.jsonl
+# Content settings the dashboard publishes for the decoys.
+runtime/

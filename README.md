@@ -37,8 +37,10 @@ Phases 0 to 6 are in place:
   A settings page (`qlure/settings.py`) allows only safe changes: approved ports, fake content,
   scoring weights and an allowlist. Every change, accepted or refused, is audited and can be undone.
   There is no setting for outbound network, command execution, executable uploads or host folders.
-  Judge mode makes everything read-only. Port and content settings are saved and audited but are
-  not yet pushed into running decoys; rule weights, thresholds and the allowlist apply at once.
+  Judge mode makes everything read-only. Rule weights, thresholds and the allowlist apply at once,
+  and the company name and FTP banner reach the web and FTP decoys through one small read-only
+  file (`runtime/content.json`). Port and enable settings are saved and audited but a restart of
+  the decoys is still needed: the dashboard has no control over Docker, on purpose.
 
 - Capture, replay and evaluation tools (`qlure capture`, `qlure replay`, `qlure eval`), described
   below. They are built and tested on a tiny capture recorded from the real decoys. No attack-tool
@@ -65,6 +67,7 @@ Phases 0 to 6 are in place:
 With Docker:
 
 ```sh
+mkdir -p logs data runtime && chmod 777 logs data runtime   # first time only
 docker compose up -d --build
 curl -i http://localhost:8080/login
 curl http://localhost:8080/backup/config.bak        # the planted SSH login
