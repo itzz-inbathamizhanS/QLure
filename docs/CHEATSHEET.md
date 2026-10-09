@@ -1,6 +1,6 @@
 # Q-Lure Commands & Operations Cheat Sheet
 
-This document contains all the essential PowerShell and Docker commands used to build, test, run, and manage the Q-Lure system. 
+This document contains the essential PowerShell and Docker commands used to build, test, run, and manage the Q-Lure system.
 
 ---
 
@@ -11,7 +11,7 @@ This document contains all the essential PowerShell and Docker commands used to 
 ```powershell
 docker compose -p qlure-live up -d
 ```
-*Spins up the entire network (web, api, ssh, banners, gateway, dashboard, and forwarder) in the background.*
+*Starts the decoys (gateway, web, api, ssh, banners, dockerapi), the egress watchers, the forwarder and the dashboard in the background.*
 
 **Stop the System:**
 ```powershell
@@ -29,7 +29,14 @@ docker compose -p qlure-live up -d --build dashboard
 ```powershell
 docker logs -f qlure-live-forwarder-1
 ```
-*Streams the live background logs. Replace `forwarder` with `web`, `api`, or `dashboard` to see other services.*
+*Streams the live background logs. Replace `forwarder` with `web`, `api`, `dashboard` or `dockerapi` to see other services.*
+
+**Check the decoys and the dashboard:**
+```powershell
+docker compose -p qlure-live ps -a
+curl.exe -s http://127.0.0.1:9000/healthz
+```
+*`/healthz` is public and returns JSON (`status`, `db`, event and session counts, `live`). Use `http://127.0.0.1:9100` for a native dashboard. `/metrics` needs a login unless `QLURE_METRICS_PUBLIC=1`.*
 
 ---
 
@@ -45,9 +52,23 @@ powershell -ExecutionPolicy Bypass -File tools\demo-attack.ps1
 **Key Attack Scenarios in the Script:**
 - `1` **Recon scan:** Fires multiple `curl` commands at hidden paths (e.g., `/.env`, `/wp-admin/`) to trigger **R2 (Path Enumeration)**.
 - `2` **Brute-force login:** Rapidly POSTs multiple fake passwords to `/login` to trigger **R3 (Brute Force)**.
-- `3` **Find the leaked file:** Uses regex to extract the planted SSH password from `/backup/config.bak` to set up **R7 (Honeytoken)**.
+- `3` **Find the leaked file:** Reads `/backup/config.bak` to trigger **R9 (Sensitive file access)** and capture the planted SSH password for option `4`.
+- `4` **Use stolen SSH creds:** Logs in to the SSH decoy with the planted password (**R7, honeytoken use**).
+- `5` **Use stolen API key:** Calls the API with the planted key (**R7**).
+- `7` **SQL injection probe:** An injection pattern on the web page (**R5**).
 - `8` **Path Traversal:** Requests `/download?file=../../../../etc/passwd` (answered from the fake file tree only).
-- `A` **Run All Automated:** Instantly runs all attacks sequentially without prompting.
+- `9` **Scanner user agent:** The same page with a scanner's browser string (**R6**).
+- `11` **FTP banner probe:** FTP login attempts on the FTP decoy.
+- `12` **Database probes:** MySQL and Redis ports.
+- `A` **Run All Automated:** Runs steps 1, 2, 3, 7, 8, 9, 11 and 12 in one go without prompting.
+
+**Labelled harmless steps (Python, loopback only):**
+```powershell
+python tools/demo_scenario.py --list
+python tools/demo_scenario.py --dry-run
+python tools/demo_scenario.py
+```
+*Thirteen fixed steps against `127.0.0.1`. `--list` shows them, `--dry-run` sends nothing, and any non-loopback `--target` is refused. Add `--no-proxy-header` when the gateway is in front (Docker).*
 
 ---
 
@@ -70,19 +91,58 @@ Get-ChildItem -Path "logs\*.jsonl" | ForEach-Object { Set-Content $_.FullName $n
 docker compose -p qlure-live restart
 ```
 
+**Remove only old events, the safe way:**
+```powershell
+python -m qlure.cli prune --db data/qlure.db --logs logs --older-than 30d --dry-run
+python -m qlure.cli prune --db data/qlure.db --logs logs --older-than 30d --yes
+python -m qlure.cli verify --logs logs --db data/qlure.db
+```
+*`prune` is permanent and needs `--yes`. It leaves a retention anchor, so `verify` still passes. See [RETENTION.md](RETENTION.md).*
+
 ---
 
-## 4. Python Backend (Correlations & Rules)
-*Advanced commands to test the python logic locally (requires python environment setup).*
+## 4. Python Backend (Correlations, Rules and Exports)
+*Commands to test the Python logic locally (requires the Python environment: `pip install -e '.[dev]'`).*
 
-**Manually trigger the Correlation Engine:**
+**Move events into the store and score them:**
 ```powershell
-qlure correlate
+python -m qlure.cli forward --logs logs --db data/qlure.db
+python -m qlure.cli correlate --db data/qlure.db
 ```
-*Reads the `events` table and builds `sessions`, `actors`, and assigns `findings` (scores).*
+*`forward` copies new JSONL lines into `events`. `correlate` rebuilds `sessions`, `actors` and `findings` (scores).*
+
+**Check the hash chain:**
+```powershell
+python -m qlure.cli verify --logs logs --db data/qlure.db
+```
+
+**Export indicators (read-only):**
+```powershell
+python -m qlure.cli export --db data/qlure.db --format csv --out data/indicators.csv
+python -m qlure.cli export --db data/qlure.db --format stix --min-verdict suspicious --out data/indicators.json
+python -m qlure.cli export --db data/qlure.db --format blocklist
+```
+*`csv`, `stix` (STIX 2.1) and `blocklist`. The default floor is `noteworthy`. The dashboard **Export** page has the same files. See [EXPORT.md](EXPORT.md).*
+
+**Webhook alerts (off by default, operator side):**
+```powershell
+python -m qlure.cli alert --db data/qlure.db --state data/alert-state.json --dry-run
+```
+*Prints the payloads without sending. Without `--dry-run`, the URL comes from `--url`, `QLURE_ALERT_WEBHOOK` or the settings file. See [ALERTS.md](ALERTS.md).*
 
 **Train the Machine Learning Model:**
 ```powershell
-qlure model train
+python -m qlure.cli ml train captures\tuning
 ```
-*Reads the historical sessions in the database, extracts behavioral features, and trains the Logistic Regression algorithm, saving it to `model.json`.*
+*Trains the logistic-regression second opinion on labelled tuning captures and writes `data/model.json`. It refuses `heldout` folders and fewer than 10 sessions.*
+
+**Evaluate on labelled captures:**
+```powershell
+python -m qlure.cli eval captures\tuning
+```
+
+**Sample data for a fresh clone (no Docker):**
+```powershell
+python tools/seed_demo.py --db data/demo.db
+```
+*Builds 10 sessions for 7 actors from the real decoys, in-process. `--force` replaces existing sample data.*

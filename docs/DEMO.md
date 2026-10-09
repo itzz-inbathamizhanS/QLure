@@ -25,12 +25,23 @@ Give each step about a minute.
    includes the honeytoken hits.
 3. **Evidence.** From the session page, open **Printable report** and **Evidence file (JSON)**.
    The JSON includes the hash-chain check.
-4. **Actors.** Open the actor page. One actor reaches a combined score of 100 across the web, API,
-   and SSH decoys, with the kill-chain explanation.
+4. **Actors.** Open the actor page. In the sample data (`tools/seed_demo.py`), one visitor's web and
+   SSH sessions form an actor with a combined score of 100, with the kill-chain explanation. Their
+   API session is a separate actor, because sessions never link by IP address alone.
 5. **Settings.** Show the list of things that cannot be configured, then the change history.
    Do not change anything during the demo. Changes are audited and can be rolled back.
 6. **Phone width.** Resize the window to about 390 px wide. The layout should stay on screen with
    no sideways scrolling.
+7. **ATT&CK matrix.** Open **ATT&CK** in the sidebar. Seen techniques are highlighted; a click opens
+   the highest-scoring session that shows the technique.
+8. **SSH replay.** On an SSH session (for example `198.51.100.77` in the seeded data), open
+   **Terminal replay**: the commands in order, each with the decoy's own reply.
+9. **Export.** Open **Export** and show the CSV, STIX and blocklist downloads. Noteworthy only by
+   default; **Include Suspicious sessions** adds the Suspicious ones.
+
+The live indicator above the Sessions list shows that the list refreshes itself. The **Dark mode**
+button at the bottom of the sidebar switches the theme. Steps 7 to 9 need the Phase 3 and 4 build,
+which the hosted snapshot may not have yet (see the note under Show it on Vercel).
 
 ## Domain scanner (both setups)
 
@@ -53,6 +64,8 @@ Use this to show the second part of the dashboard, with no decoys needed.
 Notes:
 
 - The hosted site shows a fixed snapshot. New attacks will not appear while you present.
+- The snapshot is built outside this repository (ROADMAP P4.5 is not done), so it may not show the
+  ATT&CK, Export and live pages yet. Use localhost for those steps.
 - The sidebar reads **Hosted demo** when the app runs on Vercel.
 - Settings changes are stored on the Vercel instance and may reset at any time. Avoid making
   changes in front of an audience.
@@ -131,10 +144,10 @@ Use this to show attacks arriving and being scored while the audience watches.
 mkdir logs, data, runtime
 ```
 
-2. Start the five decoy containers:
+2. Start the decoy containers:
 
 ```bash
-docker compose up -d --build gateway web api ssh banners
+docker compose up -d --build gateway web api ssh banners dockerapi
 ```
 
 3. Check they are running:
@@ -143,7 +156,8 @@ docker compose up -d --build gateway web api ssh banners
 docker compose ps -a
 ```
 
-   Five services should show `Up`.
+   Six services should show `Up`: gateway, web, api, ssh, banners and dockerapi (the fake Docker
+   Engine API on port 2375).
 
 4. In a second terminal, set a password and start the dashboard on port 9100. The commands below
    are for PowerShell. In Command Prompt (`cmd.exe`), use `set NAME=value` instead of
@@ -353,7 +367,7 @@ lower than expected, check the rule cards on its page to see which rules fired.
 | Problem | Fix |
 |---|---|
 | `unknown shorthand flag: '.'` | Remove the trailing full stop from the command. Use `docker compose ps -a`. |
-| A decoy is not `Up` | Run `docker compose up -d --build gateway web api ssh banners` again. |
+| A decoy is not `Up` | Run `docker compose up -d --build gateway web api ssh banners dockerapi` again. |
 | Port 9100 already in use | Find the process with `netstat -ano \| findstr :9100`, or start on another port such as 9101. |
 | Port 3306 or 6379 in use | Stop any local MySQL or Redis first. |
 | The dashboard shows no new sessions | Run the `forward` and then the `correlate` command, then reload the page. |
