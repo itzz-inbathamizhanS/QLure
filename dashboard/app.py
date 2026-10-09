@@ -84,6 +84,7 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
 
     def page(request: Request, name: str, status: int = 200, **context: Any) -> Response:
         context.setdefault("judge_mode", cfg.load_settings()["judge_mode"])
+        context.setdefault("hosted", bool(os.environ.get("VERCEL")))
         context.setdefault("nav", "")
         return templates.TemplateResponse(request, name, context, status_code=status)
 

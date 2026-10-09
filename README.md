@@ -86,6 +86,12 @@ Phases 0 to 6 plus a learned second opinion are in place:
     and re-signed. The Docker images do not include liboqs, so run `qlure sign` from a trusted
     machine that has the database.
 
+## Demo
+
+Show the dashboard on the hosted Vercel snapshot or live on your own machine, with the
+same walkthrough for both. See [docs/DEMO.md](docs/DEMO.md) for the steps, the commands for
+localhost, and troubleshooting.
+
 ## Run it
 
 With Docker:
