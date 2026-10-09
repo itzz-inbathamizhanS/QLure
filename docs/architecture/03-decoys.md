@@ -81,7 +81,8 @@ Requests larger than 64 KB are refused (413) at the gateway and by the decoy (`c
 ## Banners (`decoys/banners/listeners.py`, `dialogues.py`)
 
 The FTP, MySQL and Redis listeners run short, bounded dialogues: at most 8 commands and 10 seconds
-per connection, then they close. Each one reads the gateway's PROXY line first, so events carry
+per connection, then they close. Each one reads the gateway's PROXY line first (`QLURE_PROXY_PROTOCOL=optional` relaxes this on
+loopback only, for `tools/run_live.py`; see 07-security-model.md), so events carry
 the real visitor address.
 
 - **FTP:** sends a greeting (its text comes from `runtime/content.json`). `USER` gets a

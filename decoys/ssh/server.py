@@ -1,7 +1,7 @@
 """SSH-like decoy (port 2222).
 
-A small relay listens on port 2222 and reads the gateway's PROXY line, then hands
-each connection to AsyncSSH on loopback. The relay registers the real visitor
+A small relay listens on port 2222 and reads the gateway's PROXY line (optional on localhost
+runs), then hands each connection to AsyncSSH on loopback. The relay registers the real visitor
 before it connects, so every SSH session carries the right source address.
 """
 
@@ -20,7 +20,13 @@ import asyncssh
 from asyncssh.kex import get_default_kex_algs
 
 from decoys import honeytokens
-from decoys.common import BadProxyHeader, Client, fingerprint, read_proxy_header
+from decoys.common import (
+    BadProxyHeader,
+    Client,
+    accept_client,
+    check_proxy_mode_safe,
+    fingerprint,
+)
 from decoys.ssh.shell import ShellState, run_session
 from qlure.events import Action, Service, emit
 from qlure.pqc.kex import KexSniffer, kex_fingerprint, pqc_capable
@@ -148,7 +154,7 @@ async def _process(process: asyncssh.SSHServerProcess) -> None:
 
 
 async def _pipe(
-    reader: asyncio.StreamReader,
+    reader: Any,
     writer: asyncio.StreamWriter,
     sniffer: KexSniffer | None = None,
 ) -> None:
@@ -170,7 +176,7 @@ async def _relay(
     backend_port: int,
 ) -> None:
     try:
-        visitor = await read_proxy_header(client_reader)
+        visitor, client_reader = await accept_client(client_reader, client_writer)
     except BadProxyHeader:
         client_writer.close()
         return
@@ -228,6 +234,7 @@ async def serve(
     host: str | None = None,
 ) -> None:
     host = host or bind_host()
+    check_proxy_mode_safe(host)
     key = host_key()
     backend = await asyncssh.create_server(
         DecoySSHServer,
@@ -253,4 +260,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--host", default=None, help="bind address (default: QLURE_BIND_HOST or 0.0.0.0)"
     )
-    asyncio.run(serve(host=parser.parse_args().host))
+    parser.add_argument(
+        "--proxy-protocol",
+        choices=("required", "optional"),
+        default=None,
+        help="PROXY v1 line from the gateway: required (default) or optional (localhost only)",
+    )
+    args = parser.parse_args()
+    if args.proxy_protocol:
+        os.environ["QLURE_PROXY_PROTOCOL"] = args.proxy_protocol
+    asyncio.run(serve(host=args.host))

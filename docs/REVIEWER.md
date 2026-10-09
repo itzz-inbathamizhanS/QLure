@@ -13,7 +13,7 @@ their evidence.
 - Ops: public `/healthz`, `/metrics` (login unless `QLURE_METRICS_PUBLIC=1`); `qlure export`, `qlure alert`, `qlure prune`.
 - Decoys: fake Docker Engine API on port 2375 (service `docker`); R5 labels its container patterns. Seven services, still R1 to R11.
 - Sample data: `tools/seed_demo.py` (10 sessions, 7 actors) and `tools/demo_scenario.py` (15 labelled steps, four attacker personas and one benign visitor).
-- Open: the hosted snapshot is not rebuilt yet (P4.5). The live feed does not forward, so run the forwarder.
+- Open: the hosted snapshot is not rebuilt yet (P4.5). The live feed does not forward, so run the forwarder (`python tools/run_live.py` starts decoys, forwarder and dashboard in one command, localhost only).
 
 **Safety promise.** Every planted secret is fake and listed in `decoys/honeytokens.yaml`. The
 decoys execute nothing: the fake shell only records text, the Docker API only returns fixed JSON,

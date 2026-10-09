@@ -108,7 +108,7 @@ Roadmap phases 0 to 4 are in place except P4.5 (the hosted snapshot rebuild). Ta
 
 Show the dashboard on the hosted Vercel snapshot or live on your own machine, with the
 same walkthrough for both. See [docs/DEMO.md](docs/DEMO.md) for the steps, the commands for
-localhost, and troubleshooting. Reviewers: [docs/REVIEWER.md](docs/REVIEWER.md) is a 5-minute walkthrough from a fresh clone with no Docker. On Windows, follow [docs/RUN_ON_WINDOWS.md](docs/RUN_ON_WINDOWS.md) (sample data, live decoys or Docker).
+localhost, and troubleshooting. Reviewers: [docs/REVIEWER.md](docs/REVIEWER.md) is a 5-minute walkthrough from a fresh clone with no Docker. On Windows, follow [docs/RUN_ON_WINDOWS.md](docs/RUN_ON_WINDOWS.md) (sample data, live decoys or Docker). Real live traffic without Docker: `python tools/run_live.py` starts everything on 127.0.0.1.
 The hosted snapshot is built outside this repository (ROADMAP P4.5 is not done), so it may not show
 the newest pages. For a populated dashboard from a fresh clone, see Sample data below.
 
@@ -205,7 +205,7 @@ QLURE_DB=data/demo.db QLURE_LOGS=data/demo-logs QLURE_DASHBOARD_PASSWORD=choose-
   python -m uvicorn dashboard.app:app --port 9100
 ```
 
-`tools/demo_scenario.py` sends 13 labelled, harmless attack steps to the decoys on loopback only
+`tools/demo_scenario.py` sends 15 labelled, harmless attack steps from five attacker types (each with its own documentation-range source address) to the decoys on loopback only
 (`--list` shows them, `--dry-run` sends nothing). It refuses any target other than `127.0.0.1`
 or `::1`. See [docs/REVIEWER.md](docs/REVIEWER.md) for the full walkthrough.
 

@@ -6,7 +6,7 @@ listen on `127.0.0.1` only, and all data is fake. Pick **one** path:
 | Path | Needs | Time | Shows |
 |---|---|---|---|
 | **A. Sample data** (recommended first) | Python | 3 min | The dashboard filled with sample attacks |
-| **B. Live, no Docker** | Python, 6 terminals | 10 min | Your own requests hitting the decoys |
+| **B. Live, one command** | Python | 3 min | Your own requests hitting the decoys, no Docker |
 | **C. Docker** | Docker Desktop | 10 min | The full stack with the nginx gateway |
 
 ## 0. One-time setup
@@ -58,7 +58,43 @@ The seed creates 100 events in 10 sessions across 7 fake actors (4 Noteworthy, 4
 
 Stop it with **Ctrl+C**.
 
-## Path B: live, without Docker
+## Path B: live, one command
+
+```
+python tools\run_live.py
+```
+
+This starts the web, API, SSH, FTP, MySQL, Redis and fake Docker decoys, the forwarder and the
+dashboard, all on `127.0.0.1`. It checks that the ports are free first (and tells you how to find
+the owner if not), waits for each service, then prints the dashboard address and password
+(random unless you pass `--password`) and example commands. Open http://127.0.0.1:9100 , generate
+traffic, and the sessions appear by themselves within about 10 seconds. **Ctrl+C** stops everything.
+
+Traffic to try, in another window:
+
+```
+curl http://127.0.0.1:8080/.env
+curl -i http://127.0.0.1:8080/admin
+curl -i http://127.0.0.1:8081/api/v1/users
+ssh -p 2222 deploy@127.0.0.1
+curl ftp://127.0.0.1:2121/ --user anonymous:guest
+redis-cli -p 6379
+mysql -h 127.0.0.1 -P 3306 -u root -p
+python tools\demo_scenario.py
+```
+
+The decoy SSH password is printed by the script (it is the fake one planted in
+`decoys\honeytokens.yaml`). Options: `--no-docker-api`, `--password`, `--dashboard-port`,
+`--scenario` (also run the 15 demo steps), `--reset` (delete `logs\*.jsonl` and `data\qlure.db`
+after you type `yes`; `--yes` skips the question), `--workdir DIR` (keep `logs` and `data` there).
+
+Direct clients cannot send the gateway's PROXY header, so this mode starts the SSH and
+FTP/MySQL/Redis decoys with `QLURE_PROXY_PROTOCOL=optional`. That is allowed on loopback only and
+lets any client claim a source address, so these sessions show `127.0.0.1` and are for learning,
+not evidence. **Path C (Docker) stays the strict, gateway-fronted setup**: it never uses optional
+mode. See `docs/architecture/07-security-model.md`.
+
+### Appendix: the same thing by hand (six windows)
 
 Open **six** Command Prompt windows, each in `D:\QLure` with `.venv\Scripts\activate` first.
 
@@ -66,8 +102,8 @@ Open **six** Command Prompt windows, each in `D:\QLure` with `.venv\Scripts\acti
 |---|---|
 | 1 web decoy | `python -m uvicorn decoys.web.app:app --host 127.0.0.1 --port 8080` |
 | 2 API decoy | `python -m uvicorn decoys.api.app:app --host 127.0.0.1 --port 8081` |
-| 3 SSH decoy | `set QLURE_BIND_HOST=127.0.0.1` then `python -m decoys.ssh.server` (port 2222) |
-| 4 FTP, MySQL, Redis | `set QLURE_BIND_HOST=127.0.0.1` then `python -m decoys.banners.listeners` (ports 2121, 3306, 6379) |
+| 3 SSH decoy | `set QLURE_BIND_HOST=127.0.0.1` then `set QLURE_PROXY_PROTOCOL=optional` and `python -m decoys.ssh.server` (port 2222) |
+| 4 FTP, MySQL, Redis | `set QLURE_BIND_HOST=127.0.0.1` then `set QLURE_PROXY_PROTOCOL=optional` and `python -m decoys.banners.listeners` (ports 2121, 3306, 6379) |
 | 5 fake Docker API (optional) | `python -m uvicorn decoys.dockerapi.app:app --host 127.0.0.1 --port 2375` |
 | 6 your work window | the steps below |
 

@@ -75,6 +75,21 @@ database and the archive (see [page 8](08-extras-pqc-and-ml.md)).
 choose the timestamp they appear under, so the decoys **ignore replay times** unless the request
 carries the secret `QLURE_REPLAY_TOKEN`. Keep that token secret.
 
+## PROXY protocol: required, or optional on localhost
+
+The SSH and FTP/MySQL/Redis decoys trust the gateway's PROXY v1 line for the visitor address.
+`QLURE_PROXY_PROTOCOL` (or `--proxy-protocol`) selects the mode:
+
+- `required` (default, and what Docker uses): a connection without a valid PROXY line is dropped.
+  Only the gateway can reach these ports, so the claimed address is the gateway's word.
+- `optional`: a valid PROXY line is still used; any other connection is a direct client and its
+  socket address (`127.0.0.1`) is the source. This is for `tools/run_live.py` on one computer.
+
+**Risk:** in `optional` mode any client can send a forged PROXY line and claim any source address,
+so the recorded IP is not evidence. Never use it on an exposed interface. The decoys refuse to start
+(non-zero exit) when `optional` is set and `QLURE_BIND_HOST` / `--host` is not a loopback address.
+Invalid values fall back to `required`. The compose files never set it.
+
 ## Things that are not protections
 
 - The dashboard password is a single shared secret, not user accounts.

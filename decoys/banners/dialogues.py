@@ -52,7 +52,7 @@ class Buf:
 
     def __init__(
         self,
-        reader: asyncio.StreamReader,
+        reader: Any,
         budget: int,
         on_first: Callable[[bytes], None] | None = None,
     ) -> None:

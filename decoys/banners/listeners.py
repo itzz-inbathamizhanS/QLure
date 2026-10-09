@@ -21,7 +21,7 @@ from functools import partial
 
 from decoys import content
 from decoys.banners import dialogues
-from decoys.common import BadProxyHeader, read_proxy_header
+from decoys.common import BadProxyHeader, accept_client, check_proxy_mode_safe
 from qlure.events import Action, Service, emit
 
 READ_TIMEOUT = 10
@@ -64,7 +64,7 @@ async def _handle(
     writer: asyncio.StreamWriter,
 ) -> None:
     try:
-        visitor = await read_proxy_header(reader)
+        visitor, reader = await accept_client(reader, writer)
     except BadProxyHeader:
         writer.close()
         return
@@ -141,8 +141,10 @@ async def start(
     greeting: bytes | Callable[[], bytes],
     host: str | None = None,
 ) -> asyncio.Server:
+    host = host or bind_host()
+    check_proxy_mode_safe(host)
     handler: Callable[..., object] = partial(_handle, service, greeting)
-    return await asyncio.start_server(handler, host or bind_host(), port)
+    return await asyncio.start_server(handler, host, port)
 
 
 def bind_host() -> str:
@@ -160,4 +162,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--host", default=None, help="bind address (default: QLURE_BIND_HOST or 0.0.0.0)"
     )
-    asyncio.run(main(parser.parse_args().host))
+    parser.add_argument(
+        "--proxy-protocol",
+        choices=("required", "optional"),
+        default=None,
+        help="PROXY v1 line from the gateway: required (default) or optional (localhost only)",
+    )
+    args = parser.parse_args()
+    if args.proxy_protocol:
+        os.environ["QLURE_PROXY_PROTOCOL"] = args.proxy_protocol
+    asyncio.run(main(args.host))
