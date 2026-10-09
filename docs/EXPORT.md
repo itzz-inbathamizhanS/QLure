@@ -14,15 +14,33 @@ qlure export --db data/qlure.db --format stix|csv|blocklist [--min-verdict suspi
 - A missing database prints an error and exits 1. No findings give an empty but valid output and
   exit 0.
 
+## Dashboard downloads
+
+The dashboard has an **Export** page (`/export`) with the same three files as downloads:
+
+| Route | File name | Same as |
+|---|---|---|
+| `/export.csv` | `qlure-indicators-YYYYMMDD.csv` | `--format csv` |
+| `/export.json` | `qlure-indicators-YYYYMMDD.json` (STIX 2.1, `application/stix+json`) | `--format stix` |
+| `/export.txt` | `qlure-indicators-YYYYMMDD.txt` | `--format blocklist` |
+
+- Each route takes `?min=suspicious` to include Suspicious sessions. Without it, or with
+  `min=noteworthy`, only Noteworthy sessions are exported. Any other value is refused with 400.
+- Login is required. A download only reads the store, so it still works in judge mode.
+- If the store cannot be read, the download answers 503 with a short message.
+
 ## Formats
 
 - **csv**: one row per indicator. Columns: `type, value, first_seen, last_seen, sessions, actor,
   verdict, rules, attack_ids`. Types are `ipv4`, `ipv6`, `url-path`, `user-agent`,
   `credential-hash`, `honeytoken-id` and `sha256`. Lists inside a cell are separated by `;`.
+  Any text cell that starts with `=`, `+`, `-`, `@`, tab or carriage return gets a single quote
+  (`'`) in front, so a spreadsheet reads it as text (OWASP CSV injection). Blocklist and STIX
+  output are not changed.
 - **blocklist**: plain text, one IP per line, deduplicated and sorted, with a
   `# generated ... by QLure (decoy-observed, review before blocking)` header. Loopback,
-  link-local and private addresses are skipped. Documentation ranges (198.51.100.x, 203.0.113.x)
-  are kept because the demo seed uses them.
+  link-local and private addresses are skipped. Documentation ranges (192.0.2.0/24,
+  198.51.100.0/24 and 203.0.113.0/24) are kept, so the demo's visitors appear.
 - **stix**: a STIX 2.1 bundle. It holds an identity for QLure, indicators (`ipv4-addr:value`,
   `ipv6-addr:value` and `file:hashes.'SHA-256'` patterns), attack-pattern objects with
   `mitre-attack` references, and `indicates` relationships. IDs are UUIDv5 over the indicator
@@ -40,7 +58,10 @@ qlure export --db data/qlure.db --format stix|csv|blocklist [--min-verdict suspi
 
 - `url-path`, `user-agent`, `credential-hash` and `honeytoken-id` have no STIX 2.1 pattern here,
   so they appear in the CSV only.
-- Values come from visitors. CSV cells that start with `=` may be read as formulas by a
-  spreadsheet, so open the CSV as text or import it instead of double-clicking it; the CSV writer also prefixes any text cell starting with `=`, `+`, `-`, `@`, tab or carriage return with a single quote (`'`) to neutralise formula injection (blocklist and STIX are unchanged).
+- Values come from visitors. Open a CSV as text or import it into a spreadsheet instead of
+  double-clicking it. The quote prefix covers the usual formula cases, not every spreadsheet
+  feature.
 - The `rules` and `attack_ids` of an indicator are the union over the sessions where it was seen.
-- The dashboard does not have a download route yet. That is a later task.
+- Exports are a snapshot of the store as it is when you download. Pruned events
+  (`qlure prune`, see [RETENTION.md](RETENTION.md)) are gone from later exports, so export
+  first if you need the evidence.

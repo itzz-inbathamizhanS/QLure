@@ -21,7 +21,7 @@ can be changed from the dashboard settings page (see [page 6](06-dashboard-and-s
 | FTP banner | 2121 | `banners` | FTP | A greeting, then a short login dialogue | `connect`, `banner`, `login_attempt`, `honeytoken_use` |
 | MySQL banner | 3306 | `banners` | MySQL | A server greeting, then a short login dialogue | `connect`, `banner`, `login_attempt` |
 | Redis banner | 6379 | `banners` | Redis | No greeting; fixed replies to a short command dialogue | `connect`, `banner`, `login_attempt`, `honeytoken_use`, `command` |
-| Docker Engine API | 2375 | `dockerapi` | HTTP | Fixed Docker 24.0.7 JSON; create, pull and exec return a success with a FAKE id and run nothing | `http_request` (body capped at 2 KB) |
+| Docker Engine API | 2375 | `dockerapi` (service `docker`) | HTTP | Fixed Docker 24.0.7 JSON; create, pull and exec return a success with a FAKE id and run nothing | `http_request` (body capped at 2 KB) |
 
 ## Web portal (`decoys/web/app.py`)
 
@@ -142,13 +142,25 @@ not trigger R7. They show up when a visitor reads them, and reading sensitive pa
 
 ## Docker API (`decoys/dockerapi/app.py`)
 
-A plain-HTTP fake of an exposed Docker daemon. `GET /_ping`, `/version`, `/info`, `/containers/json`
-and `/images/json` (also under `/v1.43/`) return fixed JSON; `POST /containers/create`,
-`/images/create`, `/containers/<id>/start`, `/containers/<id>/exec` and `/exec/<id>/start` return a
-success with an id that is a hash of the request, so a miner dropper keeps talking. Nothing is
-executed, pulled or stored. Everything else gets `{"message":"page not found"}`. Rule R5 labels
-container deploys (T1610), host mounts and privileged containers (T1611), miners (T1496) and
-droppers (T1105); no weight or verdict changed.
+A plain-HTTP fake of an exposed Docker daemon, published on `127.0.0.1:2375` through the gateway.
+`GET /_ping`, `/version`, `/info`, `/containers/json` and `/images/json` return fixed JSON, also
+under a version prefix such as `/v1.43/`. `POST /containers/create`, `/images/create`,
+`/containers/<id>/exec` and `/exec/<id>/start` return a success (an empty stream for the exec
+start), and `POST /containers/<id>/start` returns 204. Ids are hashes of the request, so a miner
+dropper keeps talking. Nothing is executed, pulled, started or stored. Everything else gets
+`{"message":"page not found"}`. Each request is logged as `http_request` with the first 2 KB of its
+body.
+
+Rule R5 scans these requests with four container pattern groups, each mapped to ATT&CK:
+
+| Pattern group | Matches | ATT&CK |
+|---|---|---|
+| `container_deploy` | a `/containers/create` or `/images/create` path, or a `/containers/<id>/exec` path | T1610 |
+| `container_escape` | `"Privileged": true`, a host bind such as `"Binds": ["/:...`, or host `PidMode` or `NetworkMode` | T1611 |
+| `container_mining` | `xmrig`, `minerd` or `stratum+tcp` in an image or command | T1496 |
+| `container_dropper` | `wget` or `curl` with a URL, or `chmod` in `Cmd` or `Entrypoint` | T1105 |
+
+These are labels only: the weights and verdict thresholds did not change.
 
 ## Bind address
 

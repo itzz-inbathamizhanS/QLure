@@ -18,6 +18,8 @@ real. Every safety rule below is either enforced by the setup or checked by the 
 flowchart TB
     subgraph edge [edge network: reachable from the host]
         G[gateway]
+    end
+    subgraph admin [admin network: dashboard only]
         D[dashboard]
     end
     subgraph decoynet [decoynet: internal, no internet]
@@ -25,14 +27,15 @@ flowchart TB
         G --- A[api]
         G --- S[ssh]
         G --- B[banners]
+        G --- K[dockerapi]
     end
-    D -. reads logs, read-only .-> L[(logs)]
-    W & A & S & B -->|append only| L
+    D -. reads logs; mount is read-write only for Clear All .-> L[(logs)]
+    W & A & S & B & K -->|append only| L
 ```
 
 - Only the **gateway** is on both networks. Visitors reach the decoys through it, and the decoys
   cannot start a connection to anything outside.
-- The **dashboard** is on a separate network. It cannot reach a decoy.
+- The **dashboard** is on its own `admin` network, not the decoy network. It cannot reach a decoy.
 - Published ports are bound to `127.0.0.1`. The decoys are not reachable from other machines on
   the network.
 
@@ -53,8 +56,12 @@ From `docker-compose.yml`:
 ## Where the logs go
 
 - Decoys **append** to `logs/`. They never read it back.
-- The forwarder and dashboard **read** `logs/`. The compose file mounts it read-only for both.
-- Only the forwarder writes `data/qlure.db`, and only the dashboard writes `data/settings.json`.
+- The forwarder **reads** `logs/` and the compose file mounts it read-only for it. The dashboard
+  reads `logs/` too, but its mount is read-write, because Clear All empties the files (audited).
+  `qlure prune` also rewrites the archive, so it needs write access to `logs/`.
+- The forwarder writes events to `data/qlure.db`. Correlation (the dashboard buttons and live pass,
+  or `qlure correlate`) writes sessions, actors and findings there, and `qlure prune`, `qlure sign`
+  and the config audit write there too. The dashboard writes `data/settings.json`.
 
 ## Tamper evidence
 

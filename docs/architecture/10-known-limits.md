@@ -37,18 +37,56 @@ credential-stuffing run.
 - **No learned model ships.** It needs real labelled captures to train, and it refuses to train on
   too few. See [page 8](08-extras-pqc-and-ml.md).
 - **Sessions do not link by IP alone.** This prevents merging unrelated visitors, but it also means
-  a determined actor who changes fingerprints can still split their activity across sessions.
+  a determined actor who changes fingerprints can still split their activity across sessions. In
+  the seed, the API session from `198.51.100.77` is its own actor, not part of the web and SSH
+  actor, for the same reason.
 - **Banner dialogues are short scripts.** FTP, MySQL and Redis answer a login and a few commands
   with fixed replies (rule R11 judges Redis commands), but they do not run a real protocol and
   never execute a query or store data.
 - **The database honeytoken `ht-db-001` is only checked on logins.** The web `/login` and FTP
   `USER`/`PASS` record it as honeytoken use (rule R7), but there is no MySQL login that accepts it.
 - **The API accepts only the planted keys.** Other requests get fixed responses.
+- **The Docker API is a fixed fake.** It answers Docker Engine JSON and returns a fake id for
+  container create and exec, but nothing is created, pulled, started or stored. There is no real
+  daemon behind it, so a reviewer cannot list or inspect a container it "created".
+- **The canary honeytoken raises no alert.** `ht-canary-001` (the URL in `app/backup.sh` on the SSH
+  decoy) is planted only. The honeytokens file says a fetch of it would be the alert, but no code
+  watches for that, so no rule reacts to it and it never triggers R7. `ht-git-001` and
+  `ht-sshkey-001` are planted only in the same way.
+- **The live feed correlates only.** The Sessions page re-runs correlation every
+  `QLURE_LIVE_INTERVAL` seconds (default 10). It never reads the JSONL files, so new events reach
+  the store only when the forwarder runs (the `forwarder` service in Docker, or `qlure forward`).
+  With `QLURE_LIVE=0` the page updates only on Re-run correlation.
+- **Judge mode pauses the live pass, not the button.** The background pass is skipped in judge
+  mode, but **Re-run correlation** still writes findings. Settings, labels and Clear All are
+  refused in judge mode.
 - **Port settings need a manual restart.** The dashboard saves them but cannot control Docker.
 - **Dashboard port.** The README says 9000 (inside Docker). A native run chooses its own port.
 - **Single shared dashboard password.** There are no user accounts or per-operator audit trail.
-- **Retention is manual.** `qlure prune` removes old data behind a hash-chain anchor; nothing runs it
-  automatically and the `retention_days` setting is informational. See [RETENTION.md](../RETENTION.md).
+- **Retention is manual.** `qlure prune` removes old events and their JSONL lines behind a
+  hash-chain anchor. Nothing runs it, and the `retention_days` setting only states a policy. The
+  limits are in [RETENTION.md](../RETENTION.md): the database and the archive cannot change in one
+  atomic step (a crash between them makes `verify` fail until the same prune is run again), and
+  someone who can rewrite both can still forge a shorter history unless signed checkpoints are kept
+  off the host. Pruned evidence is gone, so export first.
+- **Alerts are operator-side only.** `qlure alert` is not wired into the dashboard. It sends at
+  most 10 posts per run with one retry each, and a failed post is tried again on the next run. The
+  payload carries the source IP, so use a webhook you trust. Alert settings have no field on the
+  settings page.
+- **Metrics are gauges of the current store.** Clearing or pruning data lowers the counts.
+  `/metrics` needs a login unless `QLURE_METRICS_PUBLIC=1`; `/healthz` is public and shows counts
+  and times only.
+- **The hosted demo is not rebuilt from this repository.** ROADMAP P4.5 is not done, so the Vercel
+  snapshot may not show the newer pages (`/attack`, `/export`, the live indicator).
+- **Two attack-coverage rows are expected failures.** `ftp-anonymous-login`: `anonymous` is not in
+  the default-credential list, so R4 does not fire (a rule change is needed). `ssh-wget-pipe-sh`:
+  the shell drops the `wget` error text, a reply-realism gap in `decoys/ssh/shell.py`. Both are
+  `xfail(strict=True)` in `tests/correlate/test_attack_coverage.py` and listed in
+  [ATTACK_COVERAGE.md](../ATTACK_COVERAGE.md).
+- **Icons and panel hints are hidden on purpose.** `dashboard/static/app.css` sets `.icon` and
+  `.hint` to `display: none` as part of the flat style. A missing icon is not a bug.
+- **The theme choice is per browser.** The light or dark setting is saved in that browser's local
+  storage. Without a saved choice, the page follows the system setting.
 
 ## Things backed by evidence
 

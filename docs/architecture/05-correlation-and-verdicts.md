@@ -41,7 +41,7 @@ Eleven rules (R1 to R11), each with a weight, a family and a confidence. The ful
 | R2 | Path enumeration | 25 | recon | medium | 15 or more distinct 404 paths, or a known scanner path |
 | R3 | Brute force | 30 | credential | medium | 5 or more failed logins, or 3 or more usernames |
 | R4 | Default credentials | 15 | credential | low | any pair from the default-credential list |
-| R5 | Injection payload | 40 | exploit | high | any SQL injection, XSS, traversal, command-injection, Log4Shell, Shellshock, Spring4Shell, SSRF or web-shell pattern (web and API requests) |
+| R5 | Injection payload | 40 | exploit | high | any SQL injection, XSS, traversal, command-injection, Log4Shell, Shellshock, Spring4Shell, SSRF, web-shell or Docker container pattern, in an HTTP request to the web, API or Docker API decoy |
 | R6 | Scanner tool | 15 | recon | medium | a known scanner User-Agent (from the list in `rules.yaml`), or a banner grab with no follow-up |
 | R7 | Honeytoken use | 60 | misuse | high | any planted key or password is used |
 | R8 | Post-login discovery | 35 | misuse | high | 3 or more discovery commands, or a download or persistence command (SSH shell) |
@@ -55,9 +55,10 @@ Redis session. Its family is `exploit`, so it does not count toward the R10 kill
 **ATT&CK labels.** Each rule hit carries MITRE ATT&CK IDs, shown on the session page. They are
 labels only and never change a score. The IDs depend on what was seen: R5 maps each attack kind
 it matched (for example command injection to T1059.004, web shell to T1505.003, the rest to
-T1190), R8 maps each command category (discovery, download, persistence, privilege escalation,
-lateral movement, exfiltration, crypto mining), and R11 maps each Redis command type. The mapping
-is in the `technique_map` section of `rules.yaml`.
+T1190; the Docker API container patterns map to T1610 for deploy, T1611 for escape, T1105 for
+dropper and T1496 for mining), R8 maps each command category (discovery, download, persistence,
+privilege escalation, lateral movement, exfiltration, crypto mining), and R11 maps each Redis
+command type. The mapping is in the `technique_map` section of `rules.yaml`.
 
 ### Scoring
 

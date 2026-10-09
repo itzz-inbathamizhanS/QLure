@@ -15,8 +15,9 @@ flowchart LR
         G --> A[REST API :8081]
         G --> S[SSH-like server :2222]
         G --> B[FTP / MySQL / Redis banners]
+        G --> K[Docker Engine API :2375]
     end
-    W & A & S & B -->|emit: one JSON line| L[(logs/*.jsonl)]
+    W & A & S & B & K -->|emit: one JSON line| L[(logs/*.jsonl)]
     L -->|forward| DB[(data/qlure.db<br/>SQLite, hash chain)]
     DB -->|correlate| F[sessions, actors,<br/>rule hits, verdicts]
     F --> D[dashboard :9000<br/>read-only logs,<br/>writes data/ only]
@@ -35,21 +36,23 @@ Two boundaries matter most:
 | Part | Folder | What it does | Key files |
 |---|---|---|---|
 | Event contract | `qlure/events/` | The Pydantic `Event` model, `emit()`, and the JSON Schema export | `schema.py`, `emit.py`, `docs/event.schema.json` |
-| Decoys | `decoys/` | Web portal, REST API, SSH-like server, FTP/MySQL/Redis banners, fake file tree, honeytokens | `web/app.py`, `api/app.py`, `ssh/server.py`, `banners/listeners.py` |
+| Decoys | `decoys/` | Web portal, REST API, SSH-like server, FTP/MySQL/Redis banners, fake Docker Engine API, fake file tree, honeytokens | `web/app.py`, `api/app.py`, `ssh/server.py`, `banners/listeners.py`, `dockerapi/app.py` |
 | Gateway | `gateway/` | nginx: the only container on both networks, relays HTTP and raw TCP | `nginx.conf` |
 | Forwarder and store | `qlure/store/` | Tails the JSONL files into SQLite, chains each event by SHA-256 | `forwarder.py`, `db.py`, `chain.py`, `verify.py` |
 | Correlation | `qlure/correlate/` | Sessions, actors, rules, scoring, verdicts, plain-language explanations | `sessions.py`, `actors.py`, `rules.py`, `engine.py`, `explain.py` |
 | Rules | `qlure/rules/` | Eleven rules (R1 to R11), their weights, thresholds, ATT&CK labels and default-credential and scanner lists | `rules.yaml` |
-| Dashboard | `dashboard/` | Session and actor views, rule cards, evidence export, printable report, settings | `app.py`, `data.py`, `auth.py`, `templates/` |
+| Dashboard | `dashboard/` | Session and actor views, live feed, ATT&CK matrix, rule cards, evidence export, IOC downloads, printable report, settings, health and metrics | `app.py`, `data.py`, `auth.py`, `templates/` |
 | Settings | `qlure/settings.py` | The only changes an operator may make, validated and audited | `settings.py` |
 | Capture and evaluation | `qlure/capture.py`, `replay.py`, `evaluate.py` | Record labelled runs, replay request files, compute precision and recall | `cli.py` |
 | Extras | `qlure/pqc/`, `qlure/ml/` | Post-quantum checkpoint signing, SSH key-exchange fingerprint, learned second opinion | see [page 8](08-extras-pqc-and-ml.md) |
-| Command line | `qlure/cli.py` | One entry point for every operation | `schema, validate, forward, verify, correlate, capture, replay, eval, ml, keygen, sign` |
+| Command line | `qlure/cli.py` | One entry point for every operation | `schema, validate, forward, verify, correlate, export, alert, prune, watch-egress, capture, replay, eval, ml, keygen, sign` |
 
 ## Status at a glance
 
-- Phases 0 to 6 are in place, plus the learned second opinion.
-- Six decoy services run behind the gateway: web, API, SSH-like, and FTP, MySQL and Redis banners.
+- Roadmap phases 0 to 4 are in place except P4.5 (the hosted snapshot rebuild). Task status is in
+  [docs/ROADMAP.md](../ROADMAP.md). A learned second opinion is included as well.
+- Seven decoy services run behind the gateway, in five containers: web, API, SSH-like, the fake
+  Docker Engine API, and FTP, MySQL and Redis banners.
 - The pipeline is tested end to end on real captured runs.
 - Recall on the first real-tool run was very low. See [page 10](10-known-limits.md) before
   drawing conclusions about detection quality.

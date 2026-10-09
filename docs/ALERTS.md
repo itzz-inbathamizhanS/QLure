@@ -7,8 +7,10 @@ the operator host only. Decoy containers never make outbound calls and nothing h
 ## Configure
 
 Give the URL one of three ways (first wins): `--url`, the `QLURE_ALERT_WEBHOOK` environment
-variable, or the `alerts.webhook_url` setting (empty means off). `alerts.min_verdict` is
-`noteworthy` (default) or `suspicious`.
+variable, or the `alerts.webhook_url` setting (empty means off). The setting is read from the
+settings file (`QLURE_SETTINGS`, default `data/settings.json`). The dashboard settings page has
+no alert fields, so the other two ways are the usual choice. `alerts.min_verdict` is
+`noteworthy` (default) or `suspicious`; `--min-verdict` overrides it for one run.
 
 - Slack: create an Incoming Webhook and use its `https://hooks.slack.com/services/...` URL.
 - Discord: append `/slack` to the channel webhook URL, so Discord reads the `text` field.
@@ -25,12 +27,15 @@ qlure alert --db data/qlure.db --state data/alert-state.json --dry-run   # print
 qlure alert --db data/qlure.db --state data/alert-state.json
 ```
 
+Options: `--db` (default `data/qlure.db`), `--url`, `--state` (default `data/alert-state.json`),
+`--min-verdict suspicious|noteworthy`, `--dry-run`. The CLI prints the URL masked, never in full.
+
 Cron: `*/5 * * * * cd /opt/qlure && QLURE_ALERT_WEBHOOK=... qlure alert --db data/qlure.db`.
 Exit codes: 0 nothing to do or all sent, 1 configuration error, 2 some posts failed (they retry
 on the next run; each post is tried twice at most, 5 second timeout).
 
 Safety: redirects are not followed; file:, gopher: and other schemes are refused; a host that
-resolves to loopback, link-local or a cloud metadata address is refused unless
+resolves to loopback, link-local, 0.0.0.0 or a cloud metadata address is refused unless
 `QLURE_ALERT_ALLOW_PRIVATE=1`. At most 10 alerts go out per run; a final "+K more" message says
 how many are waiting. Sent session ids are kept in the state file (atomic write, newest 5000).
 

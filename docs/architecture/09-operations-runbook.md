@@ -14,7 +14,7 @@ mkdir logs, data, runtime
 ## Start the decoys
 
 ```bash
-docker compose up -d --build gateway web api ssh banners
+docker compose up -d --build gateway web api ssh banners dockerapi
 ```
 
 Check they are up:
@@ -55,13 +55,29 @@ python -m qlure.cli correlate --db data/qlure.db
 
 On a brand-new database, run them once, in that order, so the database and tables exist.
 
+With the dashboard running, the live feed also re-runs correlation every 10 seconds (`QLURE_LIVE=0`
+turns that off). It does not forward, so keep the forwarder running as well.
+
+## Export, alerts and retention (manual)
+
+```bash
+python -m qlure.cli export --db data/qlure.db --format csv --out data/indicators.csv
+python -m qlure.cli alert --db data/qlure.db --state data/alert-state.json --dry-run
+python -m qlure.cli prune --db data/qlure.db --logs logs --older-than 30d --dry-run
+```
+
+`export` only reads the store and `alert --dry-run` sends nothing. `prune` is permanent: run it
+with `--dry-run` first, then with `--yes`, and run `qlure verify` afterwards. Details are in
+[EXPORT.md](../EXPORT.md), [ALERTS.md](../ALERTS.md) and [RETENTION.md](../RETENTION.md).
+
 ## Check the stack
 
 | What | Command or place | Healthy looks like |
 |---|---|---|
-| Containers | `docker compose ps -a` | five decoy services `Up` |
+| Containers | `docker compose ps -a` | six decoy containers `Up`: gateway, web, api, ssh, banners, dockerapi |
 | Web decoy | http://127.0.0.1:8080/login | HTTP 200 (this writes one event) |
 | Dashboard | http://127.0.0.1:9100 | login page loads |
+| Dashboard health | http://127.0.0.1:9100/healthz | JSON with `"status": "ok"` and `"db": "ok"`; no login needed |
 | Forwarder | `python -m qlure.cli forward --logs logs --db data/qlure.db` | `stored N new events` |
 | Correlation | `python -m qlure.cli correlate --db data/qlure.db` | session and actor counts |
 | Hash chain | `python -m qlure.cli verify` (see the CLI help) | no mismatch reported; config audit line reports the chained changes |

@@ -1,7 +1,8 @@
 # Retention: `qlure prune`
 
-Retention is manual. Nothing runs it for you, and the `retention_days` setting is informational
-only (0 means no stated policy).
+Retention is manual. Nothing runs it for you. The `retention_days` setting (the "Keep data for
+(days)" field on the settings page, 0 to 365) is informational only: changing it deletes nothing
+(0 means no stated policy).
 
 ```
 qlure prune --db data/qlure.db --logs logs --older-than 30d --dry-run   # preview
@@ -40,7 +41,8 @@ migrate on first use):
 
 `qlure verify` then requires: the anchors are linked, unedited, and strictly increasing in
 `seq`; the first retained event's `prev_hash` equals the newest anchor's `upto_hash`; the
-rest of the chain checks as before. Output: `N events intact, M pruned before <date> (anchor ok)`.
+rest of the chain checks as before. Output: `chain verified: N events intact, M pruned before
+<date> (anchor ok)`; with nothing pruned it prints `chain verified: N events intact`.
 
 In one `BEGIN IMMEDIATE` transaction (the forwarder's lock, so a forwarder pass cannot
 interleave) it deletes the events, deletes sessions, findings and actors made only of removed
@@ -68,3 +70,5 @@ anchor's `seq` must match the anchor hash, which gives the anchor a signed pin. 
   replace and the commit, `verify` fails; run the same prune again to finish.
 - A decoy appending during the rewrite is carried over, but the window is not zero. Prune off
   hours or pause the decoys for a strict guarantee.
+- Prune is command-line only. The dashboard has no prune button and never runs it. Its Clear All
+  is a different, full wipe (it also drops signed checkpoints).

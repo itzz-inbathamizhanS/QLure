@@ -35,8 +35,8 @@ sequenceDiagram
 Each visitor-facing port is published on `127.0.0.1` only, so only processes on the operator's
 machine can reach the decoys. The gateway is nginx:
 
-- **HTTP** (8080, 8081) is proxied to the web and API decoys. It adds `X-Forwarded-For` with the
-  real client address.
+- **HTTP** (8080, 8081, 2375) is proxied to the web, API and Docker API decoys. It adds
+  `X-Forwarded-For` with the real client address.
 - **Raw TCP** (2222, 2121, 3306, 6379) uses nginx's stream module with the PROXY protocol. It
   writes a one-line header carrying the visitor's address before the real bytes, so the decoy
   learns the true source.
@@ -87,6 +87,10 @@ scratch each run, so changing a rule weight takes effect on the next run.
 The dashboard only reads `findings` and the events they cite. It shows the verdict, the rule
 cards with thresholds and measured values, and an evidence timeline with each event's hash. The
 evidence export carries the hash-chain check so an investigator can confirm nothing was edited.
+With the live feed on (the default), the dashboard also re-runs correlation every 10 seconds, so new
+findings show up without a click. The live pass never forwards: events still reach the store only
+through the forwarder. The IOC downloads (`/export.*`) read the same findings, see
+[EXPORT.md](../EXPORT.md).
 
 ## Why it is shaped this way
 

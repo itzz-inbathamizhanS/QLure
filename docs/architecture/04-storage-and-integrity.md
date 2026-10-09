@@ -49,7 +49,9 @@ What this gives you:
 2. Against the JSONL archive in `logs/`, which the decoys wrote and the database never touches.
 
 It reports the first place they disagree. A tampered row, a missing row, or a removed line in the
-archive all stop the check at that point.
+archive all stop the check at that point. The one allowed gap is an old prefix removed by
+`qlure prune`: the retention anchor pins where the chain resumes, so `verify` reports those
+events as pruned rather than failing.
 
 ## Retention
 
@@ -68,8 +70,9 @@ Keep the `.key` file off the decoy host and pin the `.pub` file. See [page 8](08
 
 ## Why the forwarder is separate
 
-The forwarder is the main writer to `events`, but not the only one: the dashboard's Clear All
-deletes from it (and empties the logs). That wipe is audited, and `verify` then has nothing to
-check. The forwarder reads the JSONL files read-only and remembers
+The forwarder is the main writer to `events`, but not the only one. Two commands delete from it:
+the dashboard's Clear All (which also empties the logs and is audited, so `verify` then has nothing
+to check), and `qlure prune`, which removes an old prefix from the store and the archive behind an
+anchor (see [RETENTION.md](../RETENTION.md)). The forwarder reads the JSONL files read-only and remembers
 how far it got in `forwarder_state`, so a restart resumes where it stopped. Inserts use
 `INSERT OR IGNORE` on the unique `event_id`, so an event seen twice is stored once.
