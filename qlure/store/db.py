@@ -50,6 +50,10 @@ CREATE TABLE IF NOT EXISTS config_audit (
     key TEXT NOT NULL, old_value TEXT, new_value TEXT,
     outcome TEXT NOT NULL DEFAULT 'applied', reason TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS checkpoints (
+    upto_seq INTEGER PRIMARY KEY, head_hash TEXT NOT NULL, ts TEXT NOT NULL,
+    algorithm TEXT NOT NULL, key_id TEXT NOT NULL, signature TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS labels (
     session_id TEXT PRIMARY KEY, label TEXT NOT NULL, evidence_event_ids TEXT NOT NULL,
     who TEXT NOT NULL, ts TEXT NOT NULL

@@ -21,6 +21,7 @@ decoys = [
     "uvicorn>=0.30,<1",
     "asyncssh>=2.17,<3",
 ]
+pqc = ["liboqs-python>=0.12"]
 dashboard = [
     "fastapi>=0.115,<1",
     "jinja2>=3.1,<4",
@@ -28,7 +29,7 @@ dashboard = [
     "python-multipart>=0.0.9",
 ]
 dev = [
-    "qlure[decoys,dashboard]",
+    "qlure[decoys,dashboard,pqc]",
     "pytest>=8,<9",
     "ruff>=0.6",
 ]

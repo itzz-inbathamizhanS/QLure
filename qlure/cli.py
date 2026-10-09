@@ -1,6 +1,6 @@
 """qlure command line.
 
-`schema`, `validate`, `forward`, `verify`, `correlate`, `capture`, `replay` and `eval`.
+Event schema, forwarder and verify, correlation, capture/replay/eval, and signed checkpoints.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from qlure import evaluate as evaluation
 from qlure import replay as replay_requests
 from qlure.correlate import store as correlate_store
 from qlure.events import Event, json_schema
+from qlure.pqc import signing
 from qlure.store import db, forwarder
 from qlure.store.verify import verify
 
@@ -69,15 +70,54 @@ def _forward(args: argparse.Namespace) -> int:
 
 
 def _verify(args: argparse.Namespace) -> int:
-    checked, problem = verify(db.connect(args.db), args.logs)
-    if problem is None:
-        print(f"chain verified: {checked} events intact")
+    conn = db.connect(args.db)
+    checked, problem = verify(conn, args.logs)
+    if problem is not None:
+        print(
+            f"VERIFY FAILED at event {problem.event_id} (#{problem.seq}): {problem.reason}",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"chain verified: {checked} events intact")
+    count = conn.execute("SELECT COUNT(*) FROM checkpoints").fetchone()[0]
+    if not count:
+        print("no signed checkpoints yet (see `qlure sign`)")
         return 0
-    print(
-        f"VERIFY FAILED at event {problem.event_id} (#{problem.seq}): {problem.reason}",
-        file=sys.stderr,
-    )
-    return 1
+    if not args.pub.exists():
+        print(f"{count} signed checkpoints exist but were not checked: {args.pub} not found")
+        return 0
+    try:
+        result = signing.verify_checkpoints(conn, args.pub)
+    except signing.SigningUnavailable as exc:
+        print(f"{count} signed checkpoints exist but were not checked: {exc}")
+        return 0
+    if result.problem:
+        print(f"VERIFY FAILED: {result.problem}", file=sys.stderr)
+        return 1
+    print(f"{result.checked} {signing.ALGORITHM} checkpoints verified")
+    return 0
+
+
+def _keygen(args: argparse.Namespace) -> int:
+    try:
+        private, public = signing.keygen(args.out)
+    except signing.SigningUnavailable as exc:
+        print(f"keygen: {exc}", file=sys.stderr)
+        return 1
+    print(f"wrote {private} (keep it off the decoy host) and {public}")
+    return 0
+
+
+def _sign(args: argparse.Namespace) -> int:
+    try:
+        made = signing.sign(
+            db.connect(args.db), args.key, args.pub, every=args.every, include_head=args.head
+        )
+    except (signing.SigningUnavailable, FileNotFoundError) as exc:
+        print(f"sign: {exc}", file=sys.stderr)
+        return 1
+    print(f"signed {made} new checkpoints")
+    return 0
 
 
 def _correlate(args: argparse.Namespace) -> int:
@@ -154,6 +194,18 @@ def main(argv: list[str] | None = None) -> int:
     p_corr.add_argument("--top", type=int, default=20, help="how many findings to print")
     p_corr.set_defaults(func=_correlate)
 
+    p_key = sub.add_parser("keygen", help="make an ML-DSA-65 key pair for signing checkpoints")
+    p_key.add_argument("--out", type=Path, default=Path("data/signing"))
+    p_key.set_defaults(func=_keygen)
+
+    p_sign = sub.add_parser("sign", help="sign hash-chain checkpoints with ML-DSA-65")
+    p_sign.add_argument("--db", type=Path, default=DEFAULT_DB)
+    p_sign.add_argument("--key", type=Path, default=Path("data/signing.key"))
+    p_sign.add_argument("--pub", type=Path, default=Path("data/signing.pub"))
+    p_sign.add_argument("--every", type=int, default=signing.DEFAULT_EVERY)
+    p_sign.add_argument("--head", action="store_true", help="also sign the newest event")
+    p_sign.set_defaults(func=_sign)
+
     p_cap = sub.add_parser("capture", help="record a labelled capture run from the decoy logs")
     p_cap.add_argument("action", choices=["start", "stop", "labels"])
     p_cap.add_argument("run", type=Path, nargs="?", help="run folder (for `labels`)")
@@ -192,6 +244,8 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--db", type=Path, default=DEFAULT_DB)
         if name == "forward":
             p.add_argument("--follow", action="store_true", help="keep running")
+        if name == "verify":
+            p.add_argument("--pub", type=Path, default=Path("data/signing.pub"))
         p.set_defaults(func=func)
 
     args = parser.parse_args(argv)

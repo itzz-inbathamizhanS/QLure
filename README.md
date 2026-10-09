@@ -9,7 +9,7 @@ shows the investigator why a session was flagged.
 
 ## Status
 
-Phases 0 to 5 are in place:
+Phases 0 to 6 are in place:
 
 - Event schema in `qlure/events/` (Pydantic), exported to `docs/event.schema.json`, and `emit(event)`,
   the one helper every decoy uses to validate and append events to `logs/<service>.jsonl`.
@@ -45,7 +45,20 @@ Phases 0 to 5 are in place:
   runs or held-out data from people outside the team have been recorded yet, so there are no
   reportable precision or recall numbers yet.
 
-Next phase: post-quantum extra (6).
+- Post-quantum extras:
+  - The SSH decoy reads each client's key-exchange offer and logs `kex_offered`, `kex_fp` and
+    `pqc_capable` on connect and login events, and uses the client's version line as `client_fp`.
+    This records which visitors use quantum-safe connections, which hints at their tool. It does
+    not detect quantum attacks, and no rule or score uses it. The dashboard shows one chart of
+    the share of SSH sessions offering it, split by verdict.
+  - The decoy itself offers `mlkem768x25519-sha256` first, then AsyncSSH's defaults. The
+    `sntrup761x25519-sha512@openssh.com` exchange is offered only if the installed AsyncSSH build
+    has it (the one pinned here does not).
+  - `qlure keygen`, `qlure sign` and `qlure verify` add ML-DSA-65 signed checkpoints of the hash
+    chain (needs liboqs, `pip install 'qlure[pqc]'`, built on first use). Keep the `.key` file off
+    the decoy host and pin the `.pub` file: without the private key, history cannot be re-chained
+    and re-signed. The Docker images do not include liboqs, so run `qlure sign` from a trusted
+    machine that has the database.
 
 ## Run it
 
@@ -138,7 +151,7 @@ qlure/store/         forwarder, SQLite store, hash chain                (Prasann
 qlure/correlate/     sessions, actors, rules, scoring, explanations     (Bharadhwaj M)
 qlure/rules/         rules R1 to R10 in YAML                            (Bharadhwaj M)
 qlure/pqc/           ML-DSA signing, SSH KEX fingerprint (extra)
-qlure/cli.py         qlure schema | validate | forward | verify | correlate (capture, replay, eval to come)
+qlure/cli.py         schema | validate | forward | verify | correlate | capture | replay | eval | keygen | sign
 dashboard/           session view and settings dashboard, FastAPI + HTMX (Prasanna Kumar Reddy)
 captures/            real captured sessions: tuning/ and heldout/
 tests/               pytest, one folder per module

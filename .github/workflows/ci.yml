@@ -14,6 +14,11 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e '.[dev]'
+      # liboqs (post-quantum signatures) is built from source on first import; keep the build.
+      - uses: actions/cache@v4
+        with:
+          path: ~/_oqs
+          key: liboqs-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
       - run: ruff check .
       - run: ruff format --check .
       - run: qlure schema --check

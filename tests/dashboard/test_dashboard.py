@@ -6,6 +6,7 @@ import re
 import pytest
 from fastapi.testclient import TestClient
 
+from dashboard import data
 from dashboard.app import create_app
 from decoys.web.app import app as web_app
 from qlure import settings as cfg
@@ -226,3 +227,53 @@ def _rows(conn):
 
 def test_settings_schema_is_valid_json():
     assert json.dumps(cfg.schema())
+
+
+def test_pqc_chart_counts_ssh_sessions_by_verdict(client, env):
+    import asyncio
+    import socket
+
+    import asyncssh
+
+    from decoys import honeytokens
+    from decoys.ssh import server as ssh_server
+
+    def free_port():
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            return s.getsockname()[1]
+
+    async def login(listen, ip, kex):
+        sock = socket.create_connection(("127.0.0.1", listen))
+        sock.sendall(f"PROXY TCP4 {ip} 10.0.0.1 40404 2222\r\n".encode())
+        sock.setblocking(False)
+        password = honeytokens.get("ht-ssh-001")["value"]
+        async with await asyncssh.connect(
+            "127.0.0.1",
+            sock=sock,
+            username="deploy",
+            password=password,
+            known_hosts=None,
+            kex_algs=kex,
+        ) as conn:
+            await conn.run("whoami", check=False)
+
+    async def go():
+        listen, backend = free_port(), free_port()
+        task = asyncio.create_task(ssh_server.serve(listen, backend))
+        await asyncio.sleep(0.5)
+        try:
+            await login(listen, "198.51.100.61", ["mlkem768x25519-sha256"])
+            await login(listen, "198.51.100.62", ["curve25519-sha256"])
+        finally:
+            task.cancel()
+
+    asyncio.run(go())
+    forwarder.forward_once(env["conn"], env["logs"])
+    correlate_store.run(env["conn"])
+    share = data.pqc_share(env["conn"])
+    assert share["total"] == 2
+    assert sum(b["offered"] for b in share["bars"]) == 1
+    html = client.get("/").text
+    assert "quantum-safe key exchange" in html and "<svg" in html
+    assert "does not detect quantum attacks" in html

@@ -194,3 +194,32 @@ def save_label(
         (session_id, label, json.dumps(evidence), who, now),
     )
     conn.commit()
+
+
+def pqc_share(conn: sqlite3.Connection) -> dict[str, Any]:
+    """Share of SSH sessions whose client offered quantum-safe key exchange, by verdict.
+
+    Context only: nothing here feeds a rule or a score.
+    """
+    rows = conn.execute(
+        "SELECT f.verdict, s.event_ids FROM findings f JOIN sessions s"
+        " ON s.session_id = f.session_id WHERE s.service = 'ssh'"
+    ).fetchall()
+    counts = {v: {"sessions": 0, "offered": 0} for v in ("Benign", "Suspicious", "Noteworthy")}
+    for row in rows:
+        known = None
+        for event_id in _loads(row["event_ids"], []):
+            stored = conn.execute("SELECT raw FROM events WHERE event_id=?", (event_id,)).fetchone()
+            value = json.loads(stored["raw"]).get("pqc_capable") if stored else None
+            if value is not None:
+                known = bool(value)
+                break
+        if known is None:
+            continue  # no key-exchange offer was seen, so the session is not counted
+        counts[row["verdict"]]["sessions"] += 1
+        counts[row["verdict"]]["offered"] += int(known)
+    bars = []
+    for verdict, c in counts.items():
+        share = c["offered"] / c["sessions"] if c["sessions"] else None
+        bars.append({"verdict": verdict, **c, "share": share, "width": round((share or 0) * 300)})
+    return {"bars": bars, "total": sum(c["sessions"] for c in counts.values())}
