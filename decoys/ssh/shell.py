@@ -7,6 +7,7 @@ file tree. Nothing is executed: no subprocess, no exec, no eval.
 from __future__ import annotations
 
 import posixpath
+import re
 import shlex
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -21,6 +22,10 @@ from decoys import honeytokens
 
 FAKEFS_FILE = Path(__file__).parent.parent / "fakefs" / "fs.yaml"
 HOME = "/home/deploy"
+KERNEL_RELEASE = "5.15.0-101-generic"  # matches the login banner
+_ROOT_ONLY = ("/etc/shadow", "/etc/gshadow", "/etc/sudoers", "/root")
+_WRITABLE = (HOME, "/tmp", "/var/tmp", "/dev/null")  # noqa: S108  # writes here are accepted and discarded
+_REDIRECT_RE = re.compile(r"^(.*?)(>>?)(.*)$")
 BANNER = (
     "Welcome to Ubuntu 22.04.4 LTS (GNU/Linux 5.15.0-101-generic x86_64)\n"
     "Last login: Thu Oct  8 18:22:41 2026 from 10.20.0.5\n"
@@ -85,7 +90,9 @@ def _cmd_hostname(args: list[str], state: ShellState) -> str:
 
 def _cmd_uname(args: list[str], state: ShellState) -> str:
     if "-a" in args:
-        return f"Linux {state.fs.hostname} 5.15.0-101-generic #111-Ubuntu SMP x86_64 GNU/Linux\n"
+        return f"Linux {state.fs.hostname} {KERNEL_RELEASE} #111-Ubuntu SMP x86_64 GNU/Linux\n"
+    if "-r" in args:
+        return f"{KERNEL_RELEASE}\n"
     return "Linux\n"
 
 
@@ -109,6 +116,8 @@ def _cmd_ls(args: list[str], state: ShellState) -> str:
     flags = _flags(args)
     paths = [a for a in args if not a.startswith("-")]
     target = _resolve(state, paths[0]) if paths else state.cwd
+    if _root_only(target):
+        return f"ls: cannot open directory '{paths[0]}': Permission denied\n"
     if state.fs.is_file(target):
         name = paths[0]
         return (_ls_line(state, target, name) if "l" in flags else name) + "\n"
@@ -128,11 +137,17 @@ def _cmd_ls(args: list[str], state: ShellState) -> str:
     return f"total {4 * len(rows)}\n" + "".join(f"{r}\n" for r in rows)
 
 
+def _root_only(path: str) -> bool:
+    return any(path == p or path.startswith(p + "/") for p in _ROOT_ONLY)
+
+
 def _cmd_cat(args: list[str], state: ShellState) -> str:
     out = []
     for arg in (a for a in args if not a.startswith("-") or a == "-"):
         path = _resolve(state, arg)
-        if path in state.fs.files:
+        if _root_only(path):
+            out.append(f"cat: {arg}: Permission denied\n")
+        elif path in state.fs.files:
             out.append(state.fs.files[path])
         elif state.fs.is_dir(path):
             out.append(f"cat: {arg}: Is a directory\n")
@@ -239,7 +254,9 @@ def _read_files(args: list[str], state: ShellState, name: str) -> list[tuple[str
 def _cmd_head(args: list[str], state: ShellState) -> str:
     n, out = _count(args), []
     for arg, text in _read_files(args, state, "head"):
-        if text is None:
+        if _root_only(_resolve(state, arg)):
+            out.append(f"head: cannot open '{arg}' for reading: Permission denied\n")
+        elif text is None:
             out.append(f"head: cannot open '{arg}' for reading: No such file or directory\n")
         else:
             out.append("".join(f"{ln}\n" for ln in _lines(text)[:n]))
@@ -249,7 +266,9 @@ def _cmd_head(args: list[str], state: ShellState) -> str:
 def _cmd_tail(args: list[str], state: ShellState) -> str:
     n, out = _count(args), []
     for arg, text in _read_files(args, state, "tail"):
-        if text is None:
+        if _root_only(_resolve(state, arg)):
+            out.append(f"tail: cannot open '{arg}' for reading: Permission denied\n")
+        elif text is None:
             out.append(f"tail: cannot open '{arg}' for reading: No such file or directory\n")
         else:
             out.append("".join(f"{ln}\n" for ln in _lines(text)[-n:]))
@@ -539,7 +558,46 @@ def run(line: str, state: ShellState) -> str:
     return "".join(out)
 
 
+def _redirects(argv: list[str]) -> tuple[list[str], list[str]]:
+    """Split argv into plain words and redirect targets (`>`, `>>`, `2>`, `>f`, `>>f`)."""
+    words: list[str] = []
+    targets: list[str] = []
+    expect = False
+    for tok in argv:
+        if expect:
+            targets.append(tok)
+            expect = False
+            continue
+        m = _REDIRECT_RE.match(tok)
+        if m is None:
+            words.append(tok)
+        else:
+            if m.group(1) and not m.group(1).isdigit():  # a bare number is the fd, as in 2>
+                words.append(m.group(1))
+            if m.group(3):
+                targets.append(m.group(3))
+            else:
+                expect = True
+    return words, targets
+
+
 def _run_one(argv: list[str], state: ShellState) -> str:
+    words, targets = _redirects(argv)
+    targets = [t for t in targets if not t.startswith("&")]  # 2>&1 and friends
+    if targets:
+        # Output goes to the "file": nothing is echoed, and nothing is ever written.
+        for target in targets:
+            path = _resolve(state, target)
+            if _root_only(path) or not any(
+                path == w or path.startswith(w + "/") for w in _WRITABLE
+            ):
+                return f"bash: {target}: Permission denied\n"
+        _dispatch(words, state)
+        return ""
+    return _dispatch(words, state)
+
+
+def _dispatch(argv: list[str], state: ShellState) -> str:
     if not argv:
         return ""
     name, args = argv[0], argv[1:]
@@ -550,6 +608,13 @@ def _run_one(argv: list[str], state: ShellState) -> str:
             return ""
         return f"bash: cd: {args[0] if args else '~'}: No such file or directory\n"
     handler = COMMANDS.get(name)
+    if handler is None and "/" in name:
+        path = _resolve(state, name)
+        if state.fs.is_dir(path):
+            return f"bash: {name}: Is a directory\n"
+        if state.fs.is_file(path):
+            return f"bash: {name}: Permission denied\n"
+        return f"bash: {name}: No such file or directory\n"
     if handler is None:
         return f"bash: {name}: command not found\n"
     return handler(args, state)

@@ -55,6 +55,16 @@ def _credential(body: bytes) -> dict[str, str]:
     }
 
 
+def _password_honeytoken(credential: dict[str, str]) -> dict[str, Any] | None:
+    """The planted password this login tried (SSH or database), or None."""
+    password, username = credential["password"], credential["username"]
+    for kind in ("ssh_password", "db_password"):
+        token = honeytokens.find(kind, password, username)
+        if token is not None:
+            return token
+    return None
+
+
 def _base(request: Request) -> dict[str, Any]:
     """Fields every web event carries, identifying the visitor and session."""
     return {
@@ -137,7 +147,19 @@ async def observe(request: Request, call_next):
     }
     emit({**base, "action": Action.HTTP_REQUEST})
     if request.url.path == "/login" and request.method == "POST" and response.status_code != 413:
-        emit({**base, "action": Action.LOGIN_ATTEMPT, "credential": _credential(body)})
+        credential = _credential(body)
+        token = _password_honeytoken(credential)
+        emit(
+            {
+                **base,
+                "action": Action.LOGIN_ATTEMPT,
+                "credential": credential,
+                "honeytoken_id": token["id"] if token else None,
+            }
+        )
+        if token is not None:
+            # Same shape the SSH decoy uses; the visible reply stays the normal 401 page.
+            emit({**base, "action": Action.HONEYTOKEN_USE, "honeytoken_id": token["id"]})
     return response
 
 
