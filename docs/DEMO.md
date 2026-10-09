@@ -60,6 +60,9 @@ Notes:
 
 ### For maintainers: redeploying
 
+> **Note:** the bundle and `vercel-deploy` folder are not in the repository, so these steps need
+> the maintainer's local copy. Rebuilding the bundle from the seeded database is ROADMAP task P4.5.
+
 Run these from the `vercel-deploy` folder. The Vercel CLI must be logged in (`vercel login`).
 
 ```bash
@@ -78,6 +81,11 @@ first. The bundle must contain the `dashboard/` and `qlure/` folders and `data/q
 ### Option A: hosted-equivalent data, no Docker
 
 This shows exactly the data on Vercel, on your own machine.
+
+> **Note:** `vercel-deploy/bundle.tar.xz` is not in the repository (neither the `vercel-deploy`
+> folder nor the bundle is committed), so this option does not work from a fresh clone. Use
+> **Option C** instead. A one-command seed that replaces the bundle is planned in ROADMAP task
+> P2.4 (`tools/seed_demo.py`). It does not exist yet.
 
 1. Extract the demo database from the bundle into a folder outside the repo:
 
@@ -193,6 +201,73 @@ python -m qlure.cli correlate --db data/qlure.db
    rules and verdicts. Open one to show the evidence and timeline.
 
 To keep the dashboard current during a longer demo, repeat step 7 every 10 seconds.
+
+### Option C: fresh clone, no bundle, no Docker for the web and API
+
+Use this from a fresh clone. It builds the data from your own decoys, so the counts differ from
+Vercel. Run every command from the repository root in PowerShell. The web and API decoys run
+natively. The SSH and banner decoys need Docker, so demo steps 4, 11 and 12 do not apply here.
+
+1. Create a virtual environment and install the project (Python 3.12 or later):
+
+```bash
+python -m venv .venv
+```
+
+```bash
+.\.venv\Scripts\Activate.ps1
+```
+
+```bash
+pip install -e '.[dev]'
+```
+
+2. In two separate terminals, start the web and API decoys. Events are written to `logs/`:
+
+```bash
+python -m uvicorn decoys.web.app:app --port 8080
+```
+
+```bash
+python -m uvicorn decoys.api.app:app --port 8081
+```
+
+3. In a third terminal, run the attack menu. Pick steps 1, 2, 3, 5, 7, 8 and 9. When step 5
+   asks for the key, enter the planted decoy key `qlk_decoy_7f3a9c21e5d84b0a` (ht-api-001):
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools\demo-attack.ps1
+```
+
+4. Move the events into the database, then score them. Run these in order:
+
+```bash
+qlure forward --logs logs --db data/qlure.db
+```
+
+```bash
+qlure correlate --db data/qlure.db
+```
+
+5. Check the hash chain against the archive. It prints `chain verified` when the log is intact:
+
+```bash
+qlure verify --logs logs --db data/qlure.db
+```
+
+6. Start the dashboard on port 9100 (not the 9000 that menu option 6 prints; that port belongs to
+   the Docker dashboard). Set a password first:
+
+```bash
+$env:QLURE_DASHBOARD_PASSWORD = "choose-a-strong-password"
+```
+
+```bash
+python -m uvicorn dashboard.app:app --port 9100
+```
+
+7. Open http://127.0.0.1:9100, sign in, and click **Re-run correlation** after new attacks. For
+   more attacks, repeat step 4.
 
 ### Manual threat walkthrough (no scripts)
 
