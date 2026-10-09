@@ -6,7 +6,7 @@ services:
       - qlure-data:/var/lib/qlure
   dashboard:
     environment:
-      TZ: Asia/Kolkata   # show event times in local time (UTC+5:30)
+      TZ: Asia/Kolkata   # sets the container clock only; dashboard times are still shown in UTC
     volumes:
       - ./logs:/var/log/qlure
       - qlure-data:/var/lib/qlure

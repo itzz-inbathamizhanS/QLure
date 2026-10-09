@@ -11,7 +11,7 @@ Each session is scored by the rules defined in `qlure/rules/rules.yaml`. A rule 
 | Rule | Name | Family | Weight | Confidence | What it detects |
 |---|---|---|---|---|---|
 | **R1** | Service sweep | recon | 20 | medium | One visitor touches several services within 60 seconds |
-| **R2** | Path enumeration | recon | 25 | medium | Many distinct 404 paths, or a known scanner path such as `/.env` |
+| **R2** | Path enumeration | recon | 25 | medium | Many distinct 404 paths, or a known scanner path such as `/wp-login.php` or `/.git` |
 | **R3** | Brute force | credential | 30 | medium | Many failed logins, or many different usernames tried |
 | **R4** | Default credentials | credential | 15 | low | A default username and password pair, such as `admin` / `admin` |
 | **R5** | Injection payload | exploit | 40 | high | SQL injection or similar patterns in a request |
@@ -24,6 +24,6 @@ Each session is scored by the rules defined in `qlure/rules/rules.yaml`. A rule 
 ## Important Notes
 > [!NOTE]
 > - **R7 alone** makes a session Noteworthy, because it has the largest weight.
-> - **R10** fires only when a visitor's activity goes through several families. It is what links the web, SSH and API sessions into one single attacker kill-chain.
+> - **R10** fires only when an actor's activity goes through several families, in kill-chain order. Sessions are joined into actors in `qlure/correlate/actors.py`, which is what links the web, SSH and API sessions; R10 then checks that joined activity.
 > - An IP address alone never links sessions.
-> - Thresholds and weights can be dynamically changed on the dashboard's settings page, and these changes apply at once.
+> - Thresholds and weights can be changed on the dashboard's settings page. The change is saved at once, but stored findings only change after Refresh (Re-run correlation) or `qlure correlate`.

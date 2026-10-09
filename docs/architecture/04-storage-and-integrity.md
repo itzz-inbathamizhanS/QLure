@@ -61,6 +61,8 @@ Keep the `.key` file off the decoy host and pin the `.pub` file. See [page 8](08
 
 ## Why the forwarder is separate
 
-The forwarder is the only writer to `events`. It reads the JSONL files read-only and remembers
+The forwarder is the main writer to `events`, but not the only one: the dashboard's Clear All
+deletes from it (and empties the logs). That wipe is audited, and `verify` then has nothing to
+check. The forwarder reads the JSONL files read-only and remembers
 how far it got in `forwarder_state`, so a restart resumes where it stopped. Inserts use
 `INSERT OR IGNORE` on the unique `event_id`, so an event seen twice is stored once.

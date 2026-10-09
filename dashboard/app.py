@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -145,39 +146,41 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
         filters = {k: v for k, v in request.query_params.items() if v and k != "page"}
         raw_page = request.query_params.get("page", "1")
         page_no = max(int(raw_page), 1) if raw_page.isdigit() else 1
-        c = conn()
-        rows = data.list_findings(c, filters)
-        shown = rows[(page_no - 1) * PAGE : page_no * PAGE]
-        pages = {
-            "no": page_no,
-            "total": len(rows),
-            "first": (page_no - 1) * PAGE + 1 if shown else 0,
-            "last": (page_no - 1) * PAGE + len(shown),
-            "prev": page_no - 1 if page_no > 1 else None,
-            "next": page_no + 1 if page_no * PAGE < len(rows) else None,
-            "query": urlencode(filters),
-        }
-        if request.headers.get("hx-request"):
-            return page(request, "_results.html", rows=shown, pages=pages, filters=filters)
-        return page(
-            request,
-            "index.html",
-            nav="sessions",
-            rows=shown,
-            pages=pages,
-            filters=filters,
-            options=data.filter_options(c),
-            pqc=data.pqc_share(c),
-            stats=data.overview(c),
-        )
+        with closing(conn()) as c:
+            rows = data.list_findings(c, filters)
+            shown = rows[(page_no - 1) * PAGE : page_no * PAGE]
+            pages = {
+                "no": page_no,
+                "total": len(rows),
+                "first": (page_no - 1) * PAGE + 1 if shown else 0,
+                "last": (page_no - 1) * PAGE + len(shown),
+                "prev": page_no - 1 if page_no > 1 else None,
+                "next": page_no + 1 if page_no * PAGE < len(rows) else None,
+                "query": urlencode(filters),
+            }
+            if request.headers.get("hx-request"):
+                return page(request, "_results.html", rows=shown, pages=pages, filters=filters)
+            return page(
+                request,
+                "index.html",
+                nav="sessions",
+                rows=shown,
+                pages=pages,
+                filters=filters,
+                options=data.filter_options(c),
+                pqc=data.pqc_share(c),
+                stats=data.overview(c),
+            )
 
     @app.get("/actors", response_class=HTMLResponse)
     async def actors(request: Request) -> Response:
-        return page(request, "actors.html", nav="actors", actors=data.list_actors(conn()))
+        with closing(conn()) as c:
+            return page(request, "actors.html", nav="actors", actors=data.list_actors(c))
 
     @app.get("/actor/{actor_id}", response_class=HTMLResponse)
     async def actor_view(request: Request, actor_id: str) -> Response:
-        detail = data.actor_detail(conn(), actor_id)
+        with closing(conn()) as c:
+            detail = data.actor_detail(c, actor_id)
         if detail is None:
             return page(request, "missing.html", status=404)
         return page(request, "actor.html", nav="actors", a=detail)
@@ -215,12 +218,25 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
                 reason = f"log files are read-only: {', '.join(locked)}"
                 cfg.audit(c, "admin", "data.clear", None, None, "refused", reason)
                 return Response(f"Nothing was cleared: {reason}", status_code=409)
-            count = c.execute("SELECT COUNT(*) FROM events").fetchone()[0]
-            for log_file in files:
-                log_file.write_text("", encoding="utf-8")
-            for table in CLEARED_TABLES:
-                c.execute(f"DELETE FROM {table}")  # noqa: S608  (fixed table names)
-            c.commit()
+            try:
+                c.execute("BEGIN IMMEDIATE")
+            except sqlite3.OperationalError as e:
+                reason = f"store is busy: {e}"
+                try:
+                    cfg.audit(c, "admin", "data.clear", None, None, "refused", reason)
+                except sqlite3.OperationalError:
+                    pass  # still locked; the 409 below is the only record
+                return Response(f"Nothing was cleared: {reason}", status_code=409)
+            try:
+                count = c.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+                for table in CLEARED_TABLES:
+                    c.execute(f"DELETE FROM {table}")  # noqa: S608  (fixed table names)
+                for log_file in files:
+                    log_file.write_text("", encoding="utf-8")
+                c.commit()
+            except BaseException:
+                c.rollback()
+                raise
             cfg.audit(c, "admin", "data.clear", {"events": count}, {"events": 0}, "applied", "")
         finally:
             c.close()
@@ -228,7 +244,8 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
 
     @app.get("/session/{session_id}", response_class=HTMLResponse)
     async def session_view(request: Request, session_id: str) -> Response:
-        detail = data.session_detail(conn(), session_id)
+        with closing(conn()) as c:
+            detail = data.session_detail(c, session_id)
         if detail is None:
             return page(request, "missing.html", status=404)
         settings = cfg.load_settings()["rules"]
@@ -249,15 +266,16 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
         if cfg.load_settings()["judge_mode"]:
             return Response("Judge mode is on: labels are read-only", status_code=403)
         evidence = [str(v) for v in form.getlist("evidence")]
-        data.save_label(conn(), session_id, label, evidence, "admin", datetime.now(UTC).isoformat())
+        with closing(conn()) as c:
+            data.save_label(c, session_id, label, evidence, "admin", datetime.now(UTC).isoformat())
         return RedirectResponse(f"/session/{session_id}", status_code=303)
 
     def evidence_bundle(session_id: str) -> dict[str, Any] | None:
-        c = conn()
-        detail = data.session_detail(c, session_id)
-        if detail is None:
-            return None
-        checked, problem = verify(c, logs)
+        with closing(conn()) as c:
+            detail = data.session_detail(c, session_id)
+            if detail is None:
+                return None
+            checked, problem = verify(c, logs)
         return {
             "exported_at": datetime.now(UTC).isoformat(),
             "session_id": session_id,
@@ -296,48 +314,61 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
     @app.get("/session/{session_id}/report", response_class=HTMLResponse)
     async def report(request: Request, session_id: str) -> Response:
         bundle = evidence_bundle(session_id)
-        detail = data.session_detail(conn(), session_id)
+        with closing(conn()) as c:
+            detail = data.session_detail(c, session_id)
         if bundle is None or detail is None:
             return page(request, "missing.html", status=404)
         return page(request, "report.html", s=detail, chain=bundle["hash_chain"])
 
     @app.get("/config", response_class=HTMLResponse)
     async def config_page(request: Request, message: str = "", ok: str = "") -> Response:
-        c = conn()
-        audit = c.execute("SELECT * FROM config_audit ORDER BY audit_id DESC LIMIT 30").fetchall()
-        return page(
-            request,
-            "config.html",
-            nav="settings",
-            s=cfg.load_settings(),
-            approved_ports=cfg.APPROVED_PORTS,
-            rule_ids=[f"R{i}" for i in range(1, 11)],
-            audit=audit,
-            message=message,
-            ok=ok == "1",
-        )
+        with closing(conn()) as c:
+            audit = c.execute(
+                "SELECT * FROM config_audit ORDER BY audit_id DESC LIMIT 30"
+            ).fetchall()
+            return page(
+                request,
+                "config.html",
+                nav="settings",
+                s=cfg.load_settings(),
+                approved_ports=cfg.APPROVED_PORTS,
+                rule_ids=[f"R{i}" for i in range(1, 11)],
+                audit=audit,
+                message=message,
+                ok=ok == "1",
+            )
 
     @app.post("/config")
     async def config_change(request: Request) -> Response:
         form = await request.form()
         current = cfg.load_settings()
         changes: dict[str, Any] = {}
+        weights = dict(current["rules"]["weights"])
         for key in dict.fromkeys(form.keys()):
             raw = str(form.getlist(key)[-1])
-            if key.startswith("rules.weights.") and not raw.strip():
+            if key.startswith("rules.weights."):
+                rule_id = key.removeprefix("rules.weights.")
+                if not raw.strip():  # blank: drop the override, the rule goes back to default
+                    weights.pop(rule_id, None)
+                else:
+                    weights[rule_id] = _coerce(key, raw)
                 continue
             value = _coerce(key, raw)
             if cfg._get(current, key) != value:
                 changes[key] = value
+        if weights != current["rules"]["weights"]:
+            changes["rules.weights"] = weights  # whole map, so the audit row shows the change
         if not changes:
             return RedirectResponse("/config?message=Nothing+changed&ok=1", status_code=303)
-        ok, message = cfg.apply_change(conn(), "admin", changes)
+        with closing(conn()) as c:
+            ok, message = cfg.apply_change(c, "admin", changes)
         query = f"message={message.replace(' ', '+')}&ok={int(ok)}"
         return RedirectResponse(f"/config?{query}", status_code=303)
 
     @app.post("/config/rollback/{audit_id}")
     async def config_rollback(audit_id: int) -> Response:
-        ok, message = cfg.rollback(conn(), "admin", audit_id)
+        with closing(conn()) as c:
+            ok, message = cfg.rollback(c, "admin", audit_id)
         return RedirectResponse(
             f"/config?message={message.replace(' ', '+')}&ok={int(ok)}", status_code=303
         )
