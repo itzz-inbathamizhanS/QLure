@@ -1,6 +1,21 @@
-# Q-Lure stack. Phase 0: the web portal decoy behind the gateway.
-# Decoys sit only on `decoynet` (internal: no internet access). The gateway is the
-# single container that also joins `edge`, so visitors can reach the decoys.
+# Q-Lure stack. Decoys sit only on `decoynet` (internal: no internet access).
+# The gateway is the one container on both networks, so visitors reach the decoys
+# through it. Published ports bind to 127.0.0.1 only.
+
+x-decoy: &decoy
+  build:
+    context: .
+    dockerfile: decoys/Dockerfile
+  image: qlure-decoy:phase1
+  volumes:
+    - ./logs:/var/log/qlure
+  networks:
+    decoynet: {}
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
 
 services:
   gateway:
@@ -8,13 +23,18 @@ services:
     volumes:
       - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
     ports:
-      - "8080:8080"   # web portal decoy
+      - "127.0.0.1:8080:8080"   # web admin portal
+      - "127.0.0.1:8081:8081"   # REST API
+      - "127.0.0.1:2222:2222"   # SSH-like server
+      - "127.0.0.1:2121:2121"   # FTP banner
+      - "127.0.0.1:3306:3306"   # MySQL banner
+      - "127.0.0.1:6379:6379"   # Redis banner
     networks:
       edge: {}
       decoynet:
         ipv4_address: 172.30.0.2
-    depends_on: [web]
-    user: "101:101"   # nginx user; no root needed for port 8080
+    depends_on: [web, api, ssh, banners]
+    user: "101:101"
     read_only: true
     tmpfs: ["/tmp:uid=101,gid=101"]
     cap_drop: [ALL]
@@ -24,22 +44,50 @@ services:
     restart: unless-stopped
 
   web:
-    build:
-      context: .
-      dockerfile: decoys/web/Dockerfile
-    volumes:
-      - ./logs:/var/log/qlure
+    <<: *decoy
+    command: >
+      uvicorn decoys.web.app:app --host 0.0.0.0 --port 8080 --no-server-header
+      --proxy-headers --forwarded-allow-ips 172.30.0.2
+      --limit-concurrency 100 --timeout-keep-alive 5
     networks:
       decoynet:
         ipv4_address: 172.30.0.10
-    read_only: true
-    tmpfs: [/tmp]
-    cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true"]
     mem_limit: 256m
     cpus: 0.5
     pids_limit: 128
-    restart: unless-stopped
+
+  api:
+    <<: *decoy
+    command: >
+      uvicorn decoys.api.app:app --host 0.0.0.0 --port 8081 --no-server-header
+      --proxy-headers --forwarded-allow-ips 172.30.0.2
+      --limit-concurrency 100 --timeout-keep-alive 5
+    networks:
+      decoynet:
+        ipv4_address: 172.30.0.11
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+
+  ssh:
+    <<: *decoy
+    command: python -m decoys.ssh.server
+    networks:
+      decoynet:
+        ipv4_address: 172.30.0.12
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+
+  banners:
+    <<: *decoy
+    command: python -m decoys.banners.listeners
+    networks:
+      decoynet:
+        ipv4_address: 172.30.0.13
+    mem_limit: 128m
+    cpus: 0.5
+    pids_limit: 64
 
 networks:
   edge: {}

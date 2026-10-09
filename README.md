@@ -9,17 +9,21 @@ shows the investigator why a session was flagged.
 
 ## Status
 
-Phase 0 (first review) is in place:
+Phases 0 and 1 are in place:
 
-- Repository layout below, with lint and tests wired for pull requests (`.github/workflows/ci.yml`).
-- Event schema in `qlure/events/` (Pydantic), exported to `docs/event.schema.json`.
-- `emit(event)`: the one helper every decoy uses to validate and append events to `logs/<service>.jsonl`.
-- Web portal decoy (`decoys/web/`, port 8080): serves `/login`, a realistic 404, and logs every
-  request plus every login attempt.
-- `docker-compose.yml` with the internal decoy network, reached only through a gateway.
+- Event schema in `qlure/events/` (Pydantic), exported to `docs/event.schema.json`, and `emit(event)`,
+  the one helper every decoy uses to validate and append events to `logs/<service>.jsonl`.
+- Five decoys, all behind one nginx gateway on an `internal: true` network:
+  web portal (8080), REST API (8081), SSH-like server with a fake shell (2222),
+  and FTP / MySQL / Redis listeners (2121, 3306, 6379).
+- Honeytokens (`decoys/honeytokens.yaml`) planted in one decoy and accepted in another:
+  `/backup/config.bak` on the web portal gives the SSH password, the SSH shell's
+  `~/.bash_history` gives the API key, and the API logs its use.
+- Decoys cannot reach the internet, run read-only as a non-root user, and publish ports on
+  127.0.0.1 only.
 
-Next phases: decoys and isolation (1), logging store and hash chain (2), correlation engine (3),
-session view and dashboard (4), evaluation on real captures (5), post-quantum extra (6).
+Next phases: logging store and hash chain (2), correlation engine (3), session view and
+dashboard (4), evaluation on real captures (5), post-quantum extra (6).
 
 ## Run it
 
@@ -28,17 +32,24 @@ With Docker:
 ```sh
 docker compose up -d --build
 curl -i http://localhost:8080/login
-curl -i -d 'username=admin&password=admin123' http://localhost:8080/login
-cat logs/web.jsonl
+curl http://localhost:8080/backup/config.bak        # the planted SSH login
+ssh -p 2222 deploy@localhost                        # use the password from that file
+curl -H "X-API-Key: <key from ~/.bash_history>" http://localhost:8081/api/v1/users
+cat logs/*.jsonl
 ```
 
-Without Docker (Python 3.12):
+Ports 3306 and 6379 must be free on your machine (stop a local MySQL or Redis first).
+
+Without Docker (Python 3.12), run any one decoy:
 
 ```sh
 python3.12 -m venv .venv && . .venv/bin/activate
 pip install -e '.[dev]'
 uvicorn decoys.web.app:app --port 8080
+uvicorn decoys.api.app:app --port 8081
 ```
+
+The SSH and banner decoys expect the gateway's PROXY header, so run those through Docker.
 
 Events land in `logs/web.jsonl` (set `QLURE_LOG_DIR` to change the folder). Check any log file
 against the schema with:
@@ -61,7 +72,7 @@ The event schema is the shared contract: fields are only ever added, never renam
 
 ```
 docker-compose.yml   all services, networks and limits
-gateway/             nginx: the only container with a route to the decoys
+gateway/             nginx: the only container with a route to the decoys (HTTP and raw TCP)
 decoys/              web, api, ssh, banners, fakefs, honeytokens.yaml   (Inbathamizhan S)
 qlure/events/        event schema + emit()                              (all, Prasanna Kumar Reddy)
 qlure/store/         forwarder, SQLite store, hash chain                (Prasanna Kumar Reddy)

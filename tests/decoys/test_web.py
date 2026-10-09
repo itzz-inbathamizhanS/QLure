@@ -5,7 +5,8 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from decoys.web.app import MAX_BODY_BYTES, SESSION_COOKIE, app
+from decoys.common import MAX_BODY_BYTES
+from decoys.web.app import SESSION_COOKIE, app
 from qlure.events import Event
 
 
@@ -89,3 +90,37 @@ def test_every_logged_line_is_plain_json(client, log_dir):
     client.get("/")
     for line in (log_dir / "web.jsonl").read_text().splitlines():
         json.loads(line)
+
+
+def test_dotenv_serves_the_planted_aws_key_and_logs_the_read(client, log_dir):
+    from decoys import honeytokens
+
+    resp = client.get("/.env")
+    assert resp.status_code == 200
+    assert honeytokens.get("ht-aws-001")["value"] in resp.text
+    read = [e for e in events(log_dir) if e.action == "file_read"]
+    assert len(read) == 1
+    assert read[0].honeytoken_id == "ht-aws-001"
+
+
+def test_backup_config_carries_the_ssh_password(client, log_dir):
+    from decoys import honeytokens
+
+    resp = client.get("/backup/config.bak")
+    assert honeytokens.get("ht-ssh-001")["value"] in resp.text
+    assert any(e.action == "file_read" and e.honeytoken_id == "ht-ssh-001" for e in events(log_dir))
+
+
+def test_backup_directory_lists_the_config(client):
+    assert "config.bak" in client.get("/backup/").text
+
+
+def test_admin_redirects_to_login(client):
+    resp = client.get("/admin", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/login"
+
+
+def test_api_path_on_the_web_portal_requires_auth(client):
+    resp = client.get("/api/v1/users")
+    assert resp.status_code == 401

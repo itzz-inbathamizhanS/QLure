@@ -1,0 +1,25 @@
+# Fake file tree behind the SSH decoy. Plain text only; nothing here is ever executed.
+# {{ht-api-001}} is replaced at load time with the planted API key from honeytokens.yaml.
+hostname: veltrix-app-01
+files:
+  /etc/hostname: "veltrix-app-01\n"
+  /etc/os-release: |
+    PRETTY_NAME="Ubuntu 22.04.4 LTS"
+    NAME="Ubuntu"
+    VERSION_ID="22.04"
+    ID=ubuntu
+  /home/deploy/notes.txt: |
+    Deploy checklist
+    - rotate the dispatch API key after the August migration
+    - backups run from cron at 02:00
+  /home/deploy/app/README.md: |
+    # veltrix-dispatch
+    Internal dispatch service. Deploy from the release host with make deploy.
+  /home/deploy/.bash_history: |
+    cd ~/app
+    git pull
+    ls -la
+    cat ../notes.txt
+    curl -s -H "X-API-Key: {{ht-api-001}}" http://api.veltrix.internal:8081/api/v1/users | head
+    sudo systemctl restart dispatch
+    history
