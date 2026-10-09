@@ -18,7 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Red
 from fastapi.templating import Jinja2Templates
 
 from decoys import honeytokens
-from decoys.common import fingerprint, read_capped
+from decoys.common import fingerprint, read_capped, replay_ts
 from qlure.events import Action, Service, emit
 
 COMPANY = "Veltrix Logistics"  # fictional company used across every decoy
@@ -65,6 +65,7 @@ def _base(request: Request) -> dict[str, Any]:
         "src_port": (request.client.port or None) if request.client else None,
         "client_fp": fingerprint(*(request.headers.get(name, "") for name in FP_HEADERS)),
         "session_id": request.state.session_id,
+        "replay_ts": replay_ts(request.headers),
     }
 
 

@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import ipaddress
+import os
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 MAX_BODY_BYTES = 64 * 1024
@@ -42,6 +45,23 @@ async def read_proxy_header(reader: asyncio.StreamReader) -> Client:
         return Client(ip=str(ipaddress.ip_address(parts[2])), port=int(parts[4]))
     except ValueError as exc:
         raise BadProxyHeader("bad address in PROXY line") from exc
+
+
+def replay_ts(headers: Any) -> datetime | None:
+    """The original time of a replayed request, only when it carries the replay token.
+
+    Without QLURE_REPLAY_TOKEN set, or with a wrong token, a visitor cannot choose the
+    time an event is filed under.
+    """
+    token = os.environ.get("QLURE_REPLAY_TOKEN", "")
+    given = headers.get("x-qlure-replay-token", "")
+    if not token or not hmac.compare_digest(given.encode(), token.encode()):
+        return None
+    try:
+        moment = datetime.fromisoformat(headers.get("x-qlure-replay-ts", ""))
+    except ValueError:
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
 
 
 def fingerprint(*parts: str) -> str:

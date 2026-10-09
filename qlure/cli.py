@@ -1,17 +1,21 @@
 """qlure command line.
 
-`schema`, `validate`, `forward` and `verify` so far; capture, replay and eval arrive later.
+`schema`, `validate`, `forward`, `verify`, `correlate`, `capture`, `replay` and `eval`.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
 from pydantic import ValidationError
 
+from qlure import capture as capture_runs
+from qlure import evaluate as evaluation
+from qlure import replay as replay_requests
 from qlure.correlate import store as correlate_store
 from qlure.events import Event, json_schema
 from qlure.store import db, forwarder
@@ -86,6 +90,52 @@ def _correlate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _capture(args: argparse.Namespace) -> int:
+    try:
+        if args.action == "start":
+            run = capture_runs.start(
+                args.who, args.tool, args.label, args.split, src_ip=args.src_ip, state=args.state
+            )
+            print(f"capture {run['run_id']} started ({args.label}, {args.split})")
+        elif args.action == "stop":
+            interactions = capture_runs.parse_interactions(args.interactions or "")
+            target = capture_runs.stop(
+                args.logs, args.captures, interactions=interactions, state=args.state
+            )
+            count = len((target / "events.jsonl").read_text(encoding="utf-8").splitlines())
+            print(f"saved {count} events to {target}")
+        else:
+            count = capture_runs.export_labels(db.connect(args.db), args.run)
+            print(f"wrote {count} labelled sessions to {args.run / 'labels.json'}")
+    except (capture_runs.CaptureError, FileExistsError, FileNotFoundError) as exc:
+        print(f"capture: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _replay(args: argparse.Namespace) -> int:
+    try:
+        requests = replay_requests.load(args.file)
+        summary = replay_requests.run(
+            requests, args.web, args.api, os.environ.get("QLURE_REPLAY_TOKEN", "")
+        )
+    except replay_requests.ReplayError as exc:
+        print(f"replay: {exc}", file=sys.stderr)
+        return 1
+    print(f"sent {summary.sent} requests, {summary.failed} failed")
+    return 1 if summary.failed else 0
+
+
+def _eval(args: argparse.Namespace) -> int:
+    report = evaluation.evaluate(args.folder)
+    print(evaluation.render(report))
+    if args.json:
+        args.json.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    if args.strict and any(v != "met" for v in report["targets"].values()):
+        return 1
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="qlure")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -103,6 +153,35 @@ def main(argv: list[str] | None = None) -> int:
     p_corr.add_argument("--db", type=Path, default=DEFAULT_DB)
     p_corr.add_argument("--top", type=int, default=20, help="how many findings to print")
     p_corr.set_defaults(func=_correlate)
+
+    p_cap = sub.add_parser("capture", help="record a labelled capture run from the decoy logs")
+    p_cap.add_argument("action", choices=["start", "stop", "labels"])
+    p_cap.add_argument("run", type=Path, nargs="?", help="run folder (for `labels`)")
+    p_cap.add_argument("--who", default="")
+    p_cap.add_argument("--tool", default="")
+    p_cap.add_argument("--label", choices=capture_runs.LABELS)
+    p_cap.add_argument("--split", choices=capture_runs.SPLITS)
+    p_cap.add_argument("--src-ip", help="keep only events from this visitor address")
+    p_cap.add_argument(
+        "--interactions", help="packet-capture counts for coverage, e.g. web=12,ssh=1"
+    )
+    p_cap.add_argument("--logs", type=Path, default=DEFAULT_LOGS)
+    p_cap.add_argument("--captures", type=Path, default=Path("captures"))
+    p_cap.add_argument("--db", type=Path, default=DEFAULT_DB)
+    p_cap.add_argument("--state", type=Path, default=capture_runs.STATE)
+    p_cap.set_defaults(func=_capture)
+
+    p_rep = sub.add_parser("replay", help="send a HAR, JSONL or CSV request file to the decoys")
+    p_rep.add_argument("file", type=Path)
+    p_rep.add_argument("--web", default="http://127.0.0.1:8080")
+    p_rep.add_argument("--api", default="http://127.0.0.1:8081")
+    p_rep.set_defaults(func=_replay)
+
+    p_eval = sub.add_parser("eval", help="precision, recall and more on labelled captures")
+    p_eval.add_argument("folder", type=Path)
+    p_eval.add_argument("--json", type=Path, help="also write the report as JSON")
+    p_eval.add_argument("--strict", action="store_true", help="exit 1 unless every target is met")
+    p_eval.set_defaults(func=_eval)
 
     for name, func, help_text in (
         ("forward", _forward, "copy new JSONL events into the store"),

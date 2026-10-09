@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from decoys import honeytokens
-from decoys.common import fingerprint, read_capped
+from decoys.common import fingerprint, read_capped, replay_ts
 from qlure.events import Action, Service, emit
 
 # Header that carries each planted key, and the honeytoken it belongs to.
@@ -83,6 +83,7 @@ async def observe(request: Request, call_next):
             request.headers.get("user-agent", ""), request.headers.get("accept", "")
         ),
         "session_id": "api-" + fingerprint(host, request.headers.get("user-agent", "")),
+        "replay_ts": replay_ts(request.headers),
     }
     call = {
         "method": request.method,

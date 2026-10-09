@@ -9,7 +9,7 @@ shows the investigator why a session was flagged.
 
 ## Status
 
-Phases 0 to 4 are in place:
+Phases 0 to 5 are in place:
 
 - Event schema in `qlure/events/` (Pydantic), exported to `docs/event.schema.json`, and `emit(event)`,
   the one helper every decoy uses to validate and append events to `logs/<service>.jsonl`.
@@ -40,7 +40,12 @@ Phases 0 to 4 are in place:
   Judge mode makes everything read-only. Port and content settings are saved and audited but are
   not yet pushed into running decoys; rule weights, thresholds and the allowlist apply at once.
 
-Next phases: evaluation on real captures (5), post-quantum extra (6).
+- Capture, replay and evaluation tools (`qlure capture`, `qlure replay`, `qlure eval`), described
+  below. They are built and tested on a tiny capture recorded from the real decoys. No attack-tool
+  runs or held-out data from people outside the team have been recorded yet, so there are no
+  reportable precision or recall numbers yet.
+
+Next phase: post-quantum extra (6).
 
 ## Run it
 
@@ -80,6 +85,37 @@ against the schema with:
 ```sh
 qlure validate logs/*.jsonl
 ```
+
+## Capture, replay and evaluate
+
+```sh
+qlure capture start --who tamil --tool nikto --label malicious --split tuning --src-ip 192.0.2.10
+# ... run the test against the decoys ...
+qlure capture stop --interactions web=412        # counts seen in the packet capture (optional)
+qlure capture labels captures/tuning/<run>       # save your dashboard labels and evidence marks
+qlure eval captures/tuning                       # or captures/heldout
+```
+
+A run is the events the decoys logged between `start` and `stop` (optionally from one visitor
+address), saved under `captures/<split>/<run>/` with a run log: who, tool, label, start, end.
+The label and split are chosen when the run is recorded. `qlure eval` correlates every run in
+the folder and prints precision, recall, F1, event coverage, false positives (also per 100
+benign), evidence completeness, explanation quality, a confusion matrix, and every miss with
+the reason. A metric whose inputs are missing says "not measured". `--strict` exits 1 unless
+every target is met. Raw events stay out of git; labels and run logs can be committed.
+
+To process a request file (HAR, JSONL or CSV) through the live decoys, with the original times
+kept as `replay_ts`:
+
+```sh
+export QLURE_REPLAY_TOKEN=some-secret     # set before `docker compose up`, and again here
+qlure replay requests.har                 # --web / --api to change the addresses
+```
+
+The decoys ignore replay times unless the request carries that token, so a visitor cannot
+choose the time their events are filed under. Replay covers the web and API decoys (HTTP); every
+replayed request arrives from the replaying machine's address, so visitors are told apart by
+user agent and cookie.
 
 ## Develop
 

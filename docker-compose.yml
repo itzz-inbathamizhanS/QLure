@@ -43,6 +43,8 @@ services:
 
   web:
     <<: *decoy
+    environment:
+      QLURE_REPLAY_TOKEN: ${QLURE_REPLAY_TOKEN:-}   # empty: replay times are ignored
     command: >
       uvicorn decoys.web.app:app --host 0.0.0.0 --port 8080 --no-server-header
       --proxy-headers --forwarded-allow-ips 172.30.0.2
@@ -56,6 +58,8 @@ services:
 
   api:
     <<: *decoy
+    environment:
+      QLURE_REPLAY_TOKEN: ${QLURE_REPLAY_TOKEN:-}   # empty: replay times are ignored
     command: >
       uvicorn decoys.api.app:app --host 0.0.0.0 --port 8081 --no-server-header
       --proxy-headers --forwarded-allow-ips 172.30.0.2
