@@ -14,7 +14,8 @@ def test_fake_shell_answers_from_the_table_only():
 
 def test_cd_and_ls_follow_the_fake_tree():
     state = ShellState(user="deploy")
-    assert run("ls", state) == ".bash_history\napp\nnotes.txt\n"
+    assert run("ls", state) == "app\nnotes.txt\n"  # dotfiles only with -a
+    assert ".bash_history" in run("ls -la", state)
     assert run("cd app", state) == ""
     assert run("pwd", state) == "/home/deploy/app\n"
     assert "No such file" in run("cd /nowhere", state)

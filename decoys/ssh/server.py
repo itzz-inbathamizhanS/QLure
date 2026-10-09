@@ -8,6 +8,7 @@ before it connects, so every SSH session carries the right source address.
 from __future__ import annotations
 
 import asyncio
+import os
 import socket
 import uuid
 from datetime import UTC, datetime
@@ -195,12 +196,31 @@ async def _relay(
         client_writer.close()
 
 
+def host_key() -> asyncssh.SSHKey:
+    """The decoy's host key, kept across restarts when QLURE_SSH_HOST_KEY names a file.
+
+    A new key on every start makes a returning client's known_hosts check fail, which tells an
+    attacker the box is rebuilt each time. Without the variable a fresh key is used (tests, demos).
+    """
+    path = os.environ.get("QLURE_SSH_HOST_KEY")
+    if path and os.path.exists(path):
+        return asyncssh.read_private_key(path)
+    key = asyncssh.generate_private_key("ssh-ed25519")
+    if path:
+        try:
+            key.write_private_key(path)
+            os.chmod(path, 0o600)
+        except OSError:
+            pass  # read-only mount: carry on with this run's key
+    return key
+
+
 async def serve(
     listen_port: int = LISTEN_PORT,
     backend_port: int = BACKEND_PORT,
     host: str = "0.0.0.0",  # noqa: S104
 ) -> None:
-    key = asyncssh.generate_private_key("ssh-ed25519")
+    key = host_key()
     backend = await asyncssh.create_server(
         DecoySSHServer,
         "127.0.0.1",

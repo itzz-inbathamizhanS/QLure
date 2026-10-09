@@ -11,5 +11,9 @@ services:
       - ./logs:/var/log/qlure
       - qlure-data:/var/lib/qlure
       - ./runtime:/runtime
+  # The watchdog's alerts belong with the rest of data/, so it uses the same volume.
+  egress-watch:
+    volumes:
+      - qlure-data:/var/lib/qlure
 volumes:
   qlure-data: {}

@@ -78,6 +78,11 @@ services:
   ssh:
     <<: *decoy
     command: python -m decoys.ssh.server
+    environment:
+      QLURE_SSH_HOST_KEY: /var/lib/qlure-ssh/host_key   # same host key after a restart
+    volumes:
+      - ./logs:/var/log/qlure
+      - ./data/ssh:/var/lib/qlure-ssh
     networks:
       decoynet:
         ipv4_address: 172.30.0.12
@@ -100,6 +105,20 @@ services:
     cpus: 0.5
     pids_limit: 64
 
+  # Watchdog: joins the web decoy's network namespace, reads /proc/net only, and alerts on any
+  # connection the decoy opens itself. Writes to data/, which the forwarder never reads.
+  egress-watch:
+    <<: *decoy
+    command: >
+      qlure watch-egress --proc-net /proc/net --out /var/lib/qlure/egress.jsonl --interval 2
+    network_mode: "service:web"
+    depends_on: [web]
+    volumes:
+      - ./data:/var/lib/qlure
+    mem_limit: 64m
+    cpus: 0.1
+    pids_limit: 32
+
   forwarder:
     <<: *decoy
     command: qlure forward --follow --logs /var/log/qlure --db /var/lib/qlure/qlure.db
@@ -112,7 +131,8 @@ services:
     pids_limit: 64
 
   # Operator dashboard. Not on decoynet: it cannot reach a decoy and no decoy can reach it.
-  # Reads the logs read-only, writes only data/. Published on 127.0.0.1:9000 only.
+  # Writes data/ and runtime/. It mounts the logs read-write only so "Clear all data" can empty
+  # them; every clear is written to the chained config audit. Published on 127.0.0.1:9000 only.
   dashboard:
     <<: *decoy
     command: uvicorn dashboard.app:app --host 0.0.0.0 --port 9000 --no-server-header

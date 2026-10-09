@@ -19,3 +19,12 @@ def canonical(event: Event) -> str:
 
 def link_hash(prev_hash: str, canonical_json: str) -> str:
     return hashlib.sha256(f"{prev_hash}\n{canonical_json}".encode()).hexdigest()
+
+
+CONFIG_FIELDS = ("ts", "who", "key", "old_value", "new_value", "outcome", "reason")
+
+
+def config_hash(prev_hash: str, row: dict) -> str:
+    """Hash of one config_audit row, chained to the row before it (same scheme as events)."""
+    body = json.dumps({k: row[k] for k in CONFIG_FIELDS}, sort_keys=True, separators=(",", ":"))
+    return link_hash(prev_hash, body)

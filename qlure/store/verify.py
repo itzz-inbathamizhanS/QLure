@@ -9,7 +9,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from qlure.events import Event
-from qlure.store.chain import GENESIS, canonical, link_hash
+from qlure.store.chain import GENESIS, canonical, config_hash, link_hash
 
 
 @dataclass(frozen=True)
@@ -58,4 +58,78 @@ def verify(conn: sqlite3.Connection, log_dir: Path) -> tuple[int, Problem | None
             return checked, Problem(seq, event_id, "JSONL line was edited after it was stored")
         prev = row["hash"]
         checked += 1
+    removed = _removed_from_store(conn, log_dir)
+    if removed is not None:
+        return checked, Problem(0, removed, "event was removed from the store")
     return checked, None
+
+
+def _removed_from_store(conn: sqlite3.Connection, log_dir: Path) -> str | None:
+    """An archived event the forwarder already read that the store no longer holds.
+
+    The chain alone cannot show that the newest rows were deleted: what is left still links up.
+    The forwarder's offsets say how far each file was ingested, so every valid line before that
+    point must still be in `events`.
+    """
+    stored = {row["event_id"] for row in conn.execute("SELECT event_id FROM events")}
+    for row in conn.execute("SELECT file, offset FROM forwarder_state ORDER BY file"):
+        path = log_dir / row["file"]
+        if not path.is_file():
+            continue
+        with path.open("rb") as fh:
+            ingested = fh.read(row["offset"])
+        for line in ingested.splitlines():
+            if not line.strip():
+                continue
+            try:
+                event = Event.model_validate_json(line)
+            except ValidationError:
+                continue  # the forwarder rejected it too
+            if event.event_id not in stored:
+                return event.event_id
+    return None
+
+
+@dataclass(frozen=True)
+class ConfigProblem:
+    audit_id: int
+    reason: str
+
+
+def verify_config(conn: sqlite3.Connection) -> tuple[int, int, ConfigProblem | None]:
+    """Walk config_audit in order. Returns (chained rows checked, legacy rows, first problem).
+
+    Rows written before chaining (empty hash) may only come first. Editing a row, or removing
+    a row from the middle, breaks the chain at that point. Removing the newest row cannot be
+    seen from the chain alone; signed checkpoints are the place to pin the head.
+    """
+    prev = GENESIS
+    chained = False
+    checked = 0
+    legacy = 0
+    for row in conn.execute("SELECT * FROM config_audit ORDER BY audit_id"):
+        if not row["hash"]:
+            if chained:
+                return (
+                    checked,
+                    legacy,
+                    ConfigProblem(row["audit_id"], "unchained row after chained rows"),
+                )
+            legacy += 1
+            continue
+        chained = True
+        if row["prev_hash"] != prev:
+            return (
+                checked,
+                legacy,
+                ConfigProblem(row["audit_id"], "chain link broken: an earlier change was removed"),
+            )
+        if config_hash(prev, dict(row)) != row["hash"]:
+            return (
+                checked,
+                legacy,
+                ConfigProblem(row["audit_id"], "row was edited after it was written"),
+            )
+        prev = row["hash"]
+        checked += 1
+    return checked, legacy, None

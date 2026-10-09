@@ -34,6 +34,15 @@ CSP = (
     "connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 )
 LABELS = ("benign", "malicious")
+CLEARED_TABLES = (
+    "events",
+    "sessions",
+    "actors",
+    "findings",
+    "forwarder_state",
+    "labels",
+    "checkpoints",
+)
 PAGE = 100
 MAX_REPORT_BYTES = 2_000_000
 
@@ -181,26 +190,40 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
                 correlate_store.run(c)
             finally:
                 c.close()
-                
+
         await run_in_threadpool(_run_correlation)
         return RedirectResponse("/", status_code=303)
 
     @app.post("/clear")
-    async def clear_data() -> Response:
+    async def clear_data(confirm: str = Form("")) -> Response:
+        """Start over: empty the logs and the store. Refused in judge mode, always audited.
+
+        The page asks for a ticked box rather than a JavaScript confirm(), which the CSP blocks.
+        Signed checkpoints go too: they sign events that no longer exist, and `qlure verify`
+        would fail on them forever.
+        """
+        if confirm != "yes":
+            return Response("Tick the box to confirm clearing all data.", status_code=400)
+        if cfg.load_settings()["judge_mode"]:
+            return Response("Judge mode is on: data cannot be cleared", status_code=403)
+        files = sorted(logs.glob("*.jsonl"))
+        locked = [f.name for f in files if not os.access(f, os.W_OK)]
         c = conn()
         try:
-            for table in ["events", "sessions", "actors", "findings", "forwarder_state", "labels"]:
-                c.execute(f"DELETE FROM {table}")
+            if locked:
+                # Emptying the store but not the logs would make the forwarder re-read them all.
+                reason = f"log files are read-only: {', '.join(locked)}"
+                cfg.audit(c, "admin", "data.clear", None, None, "refused", reason)
+                return Response(f"Nothing was cleared: {reason}", status_code=409)
+            count = c.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+            for log_file in files:
+                log_file.write_text("", encoding="utf-8")
+            for table in CLEARED_TABLES:
+                c.execute(f"DELETE FROM {table}")  # noqa: S608  (fixed table names)
             c.commit()
+            cfg.audit(c, "admin", "data.clear", {"events": count}, {"events": 0}, "applied", "")
         finally:
             c.close()
-        
-        logs_dir = Path(os.environ.get("QLURE_LOGS", "logs"))
-        for log_file in logs_dir.glob("*.jsonl"):
-            try:
-                log_file.write_text("", encoding="utf-8")
-            except OSError:
-                pass
         return RedirectResponse("/", status_code=303)
 
     @app.get("/session/{session_id}", response_class=HTMLResponse)

@@ -17,11 +17,13 @@ from qlure import capture as capture_runs
 from qlure import evaluate as evaluation
 from qlure import replay as replay_requests
 from qlure.correlate import store as correlate_store
+from qlure.correlate.ioc import IOCSet, match_event
 from qlure.events import Event, json_schema
 from qlure.ml import model as ml_model
 from qlure.pqc import signing
 from qlure.store import db, forwarder
-from qlure.store.verify import verify
+from qlure.store.verify import verify, verify_config
+from qlure.watch.egress import watch as watch_egress
 
 SCHEMA_PATH = Path("docs/event.schema.json")
 DEFAULT_LOGS = Path("logs")
@@ -80,6 +82,15 @@ def _verify(args: argparse.Namespace) -> int:
         )
         return 1
     print(f"chain verified: {checked} events intact")
+    config_checked, legacy, config_problem = verify_config(conn)
+    if config_problem is not None:
+        print(
+            f"VERIFY FAILED at config change #{config_problem.audit_id}: {config_problem.reason}",
+            file=sys.stderr,
+        )
+        return 1
+    note = f", {legacy} legacy row(s) from before chaining" if legacy else ""
+    print(f"config audit verified: {config_checked} change(s) chained{note}")
     count = conn.execute("SELECT COUNT(*) FROM checkpoints").fetchone()[0]
     if not count:
         print("no signed checkpoints yet (see `qlure sign`)")
@@ -128,6 +139,34 @@ def _correlate(args: argparse.Namespace) -> int:
         rules = ",".join(sorted({h.rule_id for h in f.hits}, key=lambda r: int(r[1:]))) or "-"
         where = f"{f.session.service:<6} {f.session.src_ip:<15}"
         print(f"{f.verdict:<10} {f.score:>3}  {f.actor_id}  {where} {rules}")
+    if args.iocs:
+        _print_ioc_context(result.sessions, IOCSet.load(args.iocs))
+    return 0
+
+
+def _print_ioc_context(sessions, iocs: IOCSet) -> None:
+    """IOC matches are shown as context for the analyst. They never change a score."""
+    print(f"IOC context ({len(iocs)} indicators, not scored):")
+    matched = 0
+    for session in sessions:
+        hits = {
+            hit
+            for event in session.events
+            for hit in match_event(event.model_dump(mode="json", exclude_none=True), iocs)
+        }
+        if hits:
+            matched += 1
+            values = ", ".join(sorted(f"{h.indicator_type}={h.value}" for h in hits))
+            print(f"  {session.session_id} ({session.service}): {values}")
+    print(f"{matched} session(s) matched an indicator")
+
+
+def _watch_egress(args: argparse.Namespace) -> int:
+    print(f"watching {args.proc_net} every {args.interval}s; alerts -> {args.out}", flush=True)
+    try:
+        watch_egress(args.out, args.proc_net, args.interval, args.iterations)
+    except KeyboardInterrupt:
+        pass
     return 0
 
 
@@ -146,6 +185,8 @@ def _capture(args: argparse.Namespace) -> int:
             count = len((target / "events.jsonl").read_text(encoding="utf-8").splitlines())
             print(f"saved {count} events to {target}")
         else:
+            if args.run is None:
+                raise capture_runs.CaptureError("give the run folder: qlure capture labels <run>")
             count = capture_runs.export_labels(db.connect(args.db), args.run)
             print(f"wrote {count} labelled sessions to {args.run / 'labels.json'}")
     except (capture_runs.CaptureError, FileExistsError, FileNotFoundError) as exc:
@@ -220,7 +261,15 @@ def main(argv: list[str] | None = None) -> int:
     p_corr = sub.add_parser("correlate", help="group stored events into sessions and score them")
     p_corr.add_argument("--db", type=Path, default=DEFAULT_DB)
     p_corr.add_argument("--top", type=int, default=20, help="how many findings to print")
+    p_corr.add_argument("--iocs", type=Path, default=None, help="STIX-like indicators JSON")
     p_corr.set_defaults(func=_correlate)
+
+    p_watch = sub.add_parser("watch-egress", help="alert when a decoy opens outbound connections")
+    p_watch.add_argument("--proc-net", type=Path, default=Path("/proc/net"))
+    p_watch.add_argument("--out", type=Path, default=Path("data/egress.jsonl"))
+    p_watch.add_argument("--interval", type=float, default=5.0)
+    p_watch.add_argument("--iterations", type=int, default=None, help="stop after N polls")
+    p_watch.set_defaults(func=_watch_egress)
 
     p_key = sub.add_parser("keygen", help="make an ML-DSA-65 key pair for signing checkpoints")
     p_key.add_argument("--out", type=Path, default=Path("data/signing"))

@@ -350,3 +350,7 @@ details.raw pre { margin-top: 8px; font: 11.5px/1.5 var(--mono); white-space: pr
 .bignum { font: 700 44px/1 var(--mono); padding-right: 22px; border-right: 1px solid var(--line); min-width: 110px; }
 .bignum small { display: block; font: 600 11px var(--sans); color: var(--muted); letter-spacing: .06em; margin-top: 6px; }
 .bignum.v-Noteworthy { color: var(--bad); } .bignum.v-Suspicious { color: var(--warn); } .bignum.v-Benign { color: var(--good); }
+.clear-all { position: relative; }
+.clear-all > summary { list-style: none; cursor: pointer; }
+.clear-all > summary::-webkit-details-marker { display: none; }
+.clear-all > form { position: absolute; right: 0; top: calc(100% + 6px); z-index: 10; display: grid; gap: 8px; width: 260px; padding: 12px; background: var(--panel); border: 1px solid var(--line-2); }

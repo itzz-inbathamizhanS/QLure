@@ -64,7 +64,8 @@ On a brand-new database, run them once, in that order, so the database and table
 | Dashboard | http://127.0.0.1:9100 | login page loads |
 | Forwarder | `python -m qlure.cli forward --logs logs --db data/qlure.db` | `stored N new events` |
 | Correlation | `python -m qlure.cli correlate --db data/qlure.db` | session and actor counts |
-| Hash chain | `python -m qlure.cli verify` (see the CLI help) | no mismatch reported |
+| Hash chain | `python -m qlure.cli verify` (see the CLI help) | no mismatch reported; config audit line reports the chained changes |
+| Egress watchdog | `docker compose logs egress-watch`, `data/egress.jsonl` | no lines while only visitors connect in; any alert means a decoy opened an outbound connection |
 | Raw logs | `Get-ChildItem logs` | one `.jsonl` per service that has been visited |
 
 ## Generate test events
