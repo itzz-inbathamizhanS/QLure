@@ -185,6 +185,8 @@ def _capture(args: argparse.Namespace) -> int:
             count = len((target / "events.jsonl").read_text(encoding="utf-8").splitlines())
             print(f"saved {count} events to {target}")
         else:
+            if args.run is None:
+                raise capture_runs.CaptureError("give the run folder: qlure capture labels <run>")
             count = capture_runs.export_labels(db.connect(args.db), args.run)
             print(f"wrote {count} labelled sessions to {args.run / 'labels.json'}")
     except (capture_runs.CaptureError, FileExistsError, FileNotFoundError) as exc:

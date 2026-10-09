@@ -4,7 +4,14 @@
   <div><h1>Sessions</h1>
   <p class="muted small">{% if stats.first %}Events from {{ stats.first|when }} to {{ stats.last|when }} UTC{% else %}No events yet{% endif %}</p></div>
   <span class="spacer"></span>
-  <form method="post" action="/clear" class="noprint" onsubmit="return confirm('Are you sure you want to delete all events and start over?');"><button type="submit" class="secondary" style="color:var(--c-bad);border-color:var(--c-bad)"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>Clear All</button></form>
+  {% if not judge_mode %}
+  <details class="noprint clear-all"><summary class="btn secondary">Clear all</summary>
+    <form method="post" action="/clear">
+      <label class="small"><input type="checkbox" name="confirm" value="yes" required> Delete every event, session and label</label>
+      <button type="submit" class="danger">Clear all data</button>
+    </form>
+  </details>
+  {% endif %}
   <form method="post" action="/refresh" class="noprint"><button type="submit" class="secondary"><svg class="icon"><use href="#i-refresh"/></svg>Re-run correlation</button></form>
 {% endblock %}
 {% block content %}

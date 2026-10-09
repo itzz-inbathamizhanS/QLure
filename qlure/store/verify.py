@@ -58,7 +58,36 @@ def verify(conn: sqlite3.Connection, log_dir: Path) -> tuple[int, Problem | None
             return checked, Problem(seq, event_id, "JSONL line was edited after it was stored")
         prev = row["hash"]
         checked += 1
+    removed = _removed_from_store(conn, log_dir)
+    if removed is not None:
+        return checked, Problem(0, removed, "event was removed from the store")
     return checked, None
+
+
+def _removed_from_store(conn: sqlite3.Connection, log_dir: Path) -> str | None:
+    """An archived event the forwarder already read that the store no longer holds.
+
+    The chain alone cannot show that the newest rows were deleted: what is left still links up.
+    The forwarder's offsets say how far each file was ingested, so every valid line before that
+    point must still be in `events`.
+    """
+    stored = {row["event_id"] for row in conn.execute("SELECT event_id FROM events")}
+    for row in conn.execute("SELECT file, offset FROM forwarder_state ORDER BY file"):
+        path = log_dir / row["file"]
+        if not path.is_file():
+            continue
+        with path.open("rb") as fh:
+            ingested = fh.read(row["offset"])
+        for line in ingested.splitlines():
+            if not line.strip():
+                continue
+            try:
+                event = Event.model_validate_json(line)
+            except ValidationError:
+                continue  # the forwarder rejected it too
+            if event.event_id not in stored:
+                return event.event_id
+    return None
 
 
 @dataclass(frozen=True)

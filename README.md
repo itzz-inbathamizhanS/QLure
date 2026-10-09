@@ -119,7 +119,7 @@ dashboard process.
 With Docker:
 
 ```sh
-mkdir -p logs data runtime && chmod 777 logs data runtime   # first time only
+mkdir -p logs data/ssh runtime && chmod 777 logs data data/ssh runtime   # first time only
 docker compose up -d --build
 curl -i http://localhost:8080/login
 curl http://localhost:8080/backup/config.bak        # the planted SSH login

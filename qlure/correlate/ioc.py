@@ -7,6 +7,7 @@ local machine. Hits are context for an analyst; they never score on their own.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
 from dataclasses import dataclass
@@ -40,7 +41,7 @@ class IOCSet:
             if not value:
                 continue
             if kind in {"ipv4-addr", "ipv6-addr"}:
-                iocs.ips.add(value)
+                iocs.ips.add(_ip(value))
             elif kind == "domain-name":
                 iocs.domains.add(value)
             elif kind == "file:hashes":
@@ -57,6 +58,18 @@ class IOCSet:
         return len(self.ips) + len(self.domains) + len(self.hashes) + len(self.filenames)
 
 
+def _ip(value: str) -> str:
+    """Canonical text of an address, so 2001:DB8:0::1 and 2001:db8::1 are one indicator."""
+    try:
+        return str(ipaddress.ip_address(value))
+    except ValueError:
+        return value
+
+
+def _ip_type(value: str) -> str:
+    return "ipv6-addr" if ":" in value else "ipv4-addr"
+
+
 def _strings(value: Any) -> list[str]:
     """Every string inside a nested request/response payload."""
     if isinstance(value, str):
@@ -71,8 +84,9 @@ def _strings(value: Any) -> list[str]:
 def match_event(event: dict[str, Any], iocs: IOCSet) -> list[IOCHit]:
     """Match one event (a dict in the Event schema shape) against the indicator set."""
     hits: list[IOCHit] = []
-    if event.get("src_ip", "").lower() in iocs.ips:
-        hits.append(IOCHit("ipv4-addr", event["src_ip"].lower(), "src_ip"))
+    src = _ip(str(event.get("src_ip", "")))
+    if src in iocs.ips:
+        hits.append(IOCHit(_ip_type(src), src, "src_ip"))
 
     honeytoken = event.get("honeytoken_id")
     if honeytoken and honeytoken.lower() in iocs.filenames:
@@ -81,7 +95,7 @@ def match_event(event: dict[str, Any], iocs: IOCSet) -> list[IOCHit]:
     for text in _strings(event.get("request")) + _strings(event.get("response")):
         for token in _TOKEN.findall(text.lower()):
             if token in iocs.ips:
-                hits.append(IOCHit("ipv4-addr", token, "request"))
+                hits.append(IOCHit(_ip_type(token), token, "request"))
             if token in iocs.filenames:
                 hits.append(IOCHit("file:name", token, "request"))
             if _HEX_DIGEST.match(token) and token in iocs.hashes:

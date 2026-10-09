@@ -175,7 +175,7 @@ def _forbidden(path: str) -> str | None:
     return None
 
 
-def _audit(
+def audit(
     conn: sqlite3.Connection, who: str, key: str, old: Any, new: Any, outcome: str, reason: str
 ) -> None:
     last = conn.execute("SELECT hash FROM config_audit ORDER BY audit_id DESC LIMIT 1").fetchone()
@@ -224,7 +224,7 @@ def apply_change(
         if reason is None:
             _set(candidate, key, value)
         else:
-            _audit(conn, who, key, _get(current, key), value, "refused", reason)
+            audit(conn, who, key, _get(current, key), value, "refused", reason)
             return False, f"{key}: {reason}"
 
     try:
@@ -233,13 +233,13 @@ def apply_change(
         error = exc.errors()[0]
         reason = f"{'.'.join(str(p) for p in error['loc'])}: {error['msg']}"
         for key, value in changes.items():
-            _audit(conn, who, key, _get(current, key), value, "refused", reason)
+            audit(conn, who, key, _get(current, key), value, "refused", reason)
         return False, reason
 
     rules_error = _check_rule_tuning(valid)
     if rules_error:
         for key, value in changes.items():
-            _audit(conn, who, key, _get(current, key), value, "refused", rules_error)
+            audit(conn, who, key, _get(current, key), value, "refused", rules_error)
         return False, rules_error
 
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -248,7 +248,7 @@ def apply_change(
     tmp.replace(target)
     _publish_content(valid["content"])
     for key in changes:
-        _audit(conn, who, key, _get(current, key), _get(valid, key), "applied", "")
+        audit(conn, who, key, _get(current, key), _get(valid, key), "applied", "")
     from qlure.correlate.rules import load_config  # local: avoid a circular import
 
     load_config.cache_clear()
@@ -291,6 +291,8 @@ def rollback(conn: sqlite3.Connection, who: str, audit_id: int) -> tuple[bool, s
     ).fetchone()
     if row is None or row["outcome"] != "applied":
         return False, "only an applied change can be rolled back"
+    if row["key"].startswith("data."):
+        return False, "clearing data is recorded here but cannot be rolled back"
     return apply_change(conn, who, {row["key"]: json.loads(row["old_value"])})
 
 
