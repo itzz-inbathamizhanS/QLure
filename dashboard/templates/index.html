@@ -37,6 +37,24 @@
     </select></label>
   <noscript><button type="submit">Filter</button></noscript>
 </form>
+<div class="panel">
+  <h2>SSH clients offering quantum-safe key exchange</h2>
+  {% if pqc.total %}
+  <svg viewBox="0 0 440 {{ pqc.bars|length * 34 + 6 }}" role="img" width="440" class="chart"
+       aria-label="Share of SSH sessions offering post-quantum key exchange, by verdict">
+    {% for b in pqc.bars %}
+    <text x="0" y="{{ loop.index0 * 34 + 20 }}" class="chart-label">{{ b.verdict }}</text>
+    <rect x="90" y="{{ loop.index0 * 34 + 6 }}" width="300" height="20" class="chart-track"></rect>
+    <rect x="90" y="{{ loop.index0 * 34 + 6 }}" width="{{ b.width }}" height="20" class="chart-bar verdict-{{ b.verdict }}"></rect>
+    <text x="396" y="{{ loop.index0 * 34 + 20 }}" class="chart-label">{{ b.offered }}/{{ b.sessions }}</text>
+    {% endfor %}
+  </svg>
+  <p class="muted">Counts SSH sessions whose client sent a key-exchange offer. It records which
+    tools connect, it does not detect quantum attacks, and it adds nothing to any score.</p>
+  {% else %}
+  <p class="muted">No SSH sessions with a recorded key-exchange offer yet.</p>
+  {% endif %}
+</div>
 <div id="results">
 {% include "_results.html" %}
 </div>

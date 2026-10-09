@@ -1,1 +1,1 @@
-"""ML-DSA evidence signing and SSH KEX fingerprint. Phase 6 (extra)."""
+"""Post-quantum extras: SSH key-exchange fingerprint and ML-DSA signed evidence checkpoints."""

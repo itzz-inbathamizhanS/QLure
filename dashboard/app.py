@@ -115,6 +115,7 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
             rows=rows,
             filters=filters,
             options=data.filter_options(c),
+            pqc=data.pqc_share(c),
         )
 
     @app.post("/refresh")

@@ -53,3 +53,10 @@ pre { white-space: pre-wrap; word-break: break-word; margin: 0; font: 12.5px/1.4
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
 @media print { header, .noprint, button { display: none; } body { background: #fff; color: #000; } }
+
+.chart { max-width: 100%; height: auto; }
+.chart-label { font-size: 13px; fill: var(--text); }
+.chart-track { fill: var(--line); }
+.chart-bar { fill: var(--good); }
+.chart-bar.verdict-Noteworthy { fill: var(--bad); }
+.chart-bar.verdict-Suspicious { fill: var(--warn); }
