@@ -22,6 +22,7 @@ from starlette.concurrency import run_in_threadpool
 
 from dashboard import data, scanning
 from dashboard.auth import COOKIE, LIFETIME, Auth
+from dashboard.report import scan_pdf
 from qlure import settings as cfg
 from qlure.correlate import store as correlate_store
 from qlure.store import db
@@ -34,6 +35,7 @@ CSP = (
 )
 LABELS = ("benign", "malicious")
 PAGE = 100
+MAX_REPORT_BYTES = 2_000_000
 
 
 def _when(value: str | None) -> str:
@@ -297,30 +299,33 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
         return _scanner(request)
 
     @app.post("/scanner", response_class=HTMLResponse)
-    async def scanner_run(
-        request: Request,
-        target: str = Form(""),
-        mode: str = Form("standard"),
-        action: str = Form("scan"),
-    ) -> Response:
-        if action == "verify":
-            outcome = await run_in_threadpool(scanning.verify, target)
-        else:
-            outcome = await run_in_threadpool(scanning.run, target, mode)
-        return _scanner(request, target=target, mode=mode, outcome=outcome)
+    async def scanner_run(request: Request, target: str = Form("")) -> Response:
+        outcome = await run_in_threadpool(scanning.run, target)
+        return _scanner(request, target=target, outcome=outcome)
 
-    def _scanner(
-        request: Request, target: str = "", mode: str = "standard", outcome: dict | None = None
-    ) -> Response:
-        return page(
-            request,
-            "scanner.html",
-            nav="scanner",
-            target=target,
-            mode=mode,
-            outcome=outcome,
-            full_ready=scanning.ownership_secret() is not None,
+    @app.post("/scanner/report.pdf")
+    async def scanner_report(report: str = Form("")) -> Response:
+        """The PDF for the scan result the page just showed. The scan is not run again."""
+        try:
+            result = json.loads(report) if len(report) <= MAX_REPORT_BYTES else None
+            pdf = scan_pdf(result) if isinstance(result, dict) else None
+        except Exception:  # malformed or tampered input: refuse rather than fail
+            pdf = None
+        if pdf is None:
+            return Response("Run a scan first, then download its report.", status_code=400)
+        host = "".join(
+            c for c in str(result.get("target_url", "")).split("//")[-1] if c.isalnum() or c in ".-"
         )
+        return Response(
+            pdf,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="qlure-scan-{host or "report"}.pdf"'
+            },
+        )
+
+    def _scanner(request: Request, target: str = "", outcome: dict | None = None) -> Response:
+        return page(request, "scanner.html", nav="scanner", target=target, outcome=outcome)
 
     return app
 

@@ -40,8 +40,8 @@ Use this to show the second part of the dashboard, with no decoys needed.
 2. Enter `example.com`, leave the scan type on **Standard**, and click **Run scan**. Point out the
    key exchange (hybrid post-quantum), the certificate, the checks table, and the findings. Each finding
    names its evidence.
-3. For a domain you control, choose **Full (owned domain)** after publishing the DNS TXT record that
-   **Check DNS record** shows. Full scans stay off until `QLURE_DASHBOARD_SECRET` is set on the server.
+3. Click **Download PDF report**. It opens as a two-page report: summary, TLS and certificate facts,
+   checks, and findings by severity. It is built from the scan on screen, so nothing is scanned twice.
 4. Explain the limits: no ports or IP addresses, private addresses are refused, and nothing is saved.
 
 ## Show it on Vercel
