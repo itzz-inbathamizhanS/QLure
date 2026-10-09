@@ -7,6 +7,8 @@
 <p><span class="badge verdict-{{ s.verdict }}">{{ s.verdict }}</span> score {{ s.score }} · review label: {{ s.label }}</p>
 <h2>Why</h2>
 <pre class="explanation">{{ s.explanation }}</pre>
+{% if s.ml_score is not none %}<h2>Model second opinion</h2>
+<p>{{ s.ml_why }}</p>{% endif %}
 <h2>Rules matched</h2>
 <ul>
 {% for h in s.hits %}<li><strong>{{ h.rule_id }} {{ h.name }}</strong> ({{ h.family }}, {{ h.confidence }}): needs {{ h.threshold }}; saw {{ h.measured }}</li>{% else %}<li>None</li>{% endfor %}

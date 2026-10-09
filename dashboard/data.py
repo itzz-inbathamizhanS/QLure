@@ -17,6 +17,15 @@ def _loads(text: str | None, default: Any) -> Any:
     return json.loads(text) if text else default
 
 
+def disagrees(verdict: str, ml_score: float | None) -> bool:
+    """Rules and the learned model point opposite ways: worth a human look."""
+    if ml_score is None:
+        return False
+    return (verdict == "Noteworthy" and ml_score < 0.2) or (
+        verdict != "Noteworthy" and ml_score >= 0.8
+    )
+
+
 def _first_agent(conn: sqlite3.Connection, event_ids: list[str]) -> str:
     for event_id in event_ids[:5]:
         row = conn.execute("SELECT raw FROM events WHERE event_id=?", (event_id,)).fetchone()
@@ -81,6 +90,8 @@ def list_findings(conn: sqlite3.Connection, filters: dict[str, str]) -> list[dic
                 "first_seen": row["first_seen"],
                 "last_seen": row["last_seen"],
                 "label": row["label"] or "unreviewed",
+                "ml_score": row["ml_score"],
+                "disagrees": disagrees(row["verdict"], row["ml_score"]),
             }
         )
     key = filters.get("sort", "score")
@@ -166,6 +177,9 @@ def session_detail(conn: sqlite3.Connection, session_id: str) -> dict[str, Any] 
         "last_seen": row["last_seen"],
         "events": events,
         "linked": [dict(r) for r in linked],
+        "ml_score": row["ml_score"],
+        "ml_why": row["ml_why"],
+        "disagrees": disagrees(row["verdict"], row["ml_score"]),
         "label": label["label"] if label else "unreviewed",
         "evidence_marked": _loads(label["evidence_event_ids"], []) if label else [],
     }
