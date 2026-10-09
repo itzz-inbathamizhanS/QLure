@@ -20,6 +20,8 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from qlure.store.chain import GENESIS, config_hash
+
 RULES_FILE = Path(__file__).resolve().parent / "rules" / "rules.yaml"
 
 DASHBOARD_PORT = 9000
@@ -158,12 +160,16 @@ def _get(data: dict[str, Any], path: str) -> Any:
     return node
 
 
-def _set(data: dict[str, Any], path: str, value: Any) -> None:
+def _set(data: dict[str, Any], path: str, value: Any) -> bool:
+    """Set a dotted path. False (and no change) if it would go below a plain value."""
     parts = path.split(".")
     node = data
     for part in parts[:-1]:
         node = node.setdefault(part, {})
+        if not isinstance(node, dict):
+            return False
     node[parts[-1]] = value
+    return True
 
 
 def _forbidden(path: str) -> str | None:
@@ -173,20 +179,34 @@ def _forbidden(path: str) -> str | None:
     return None
 
 
-def _audit(
+def audit(
     conn: sqlite3.Connection, who: str, key: str, old: Any, new: Any, outcome: str, reason: str
 ) -> None:
+    last = conn.execute("SELECT hash FROM config_audit ORDER BY audit_id DESC LIMIT 1").fetchone()
+    prev = last["hash"] if last and last["hash"] else GENESIS
+    row = {
+        "ts": datetime.now(UTC).isoformat(),
+        "who": who,
+        "key": key,
+        "old_value": json.dumps(old),
+        "new_value": json.dumps(new),
+        "outcome": outcome,
+        "reason": reason,
+    }
     conn.execute(
-        "INSERT INTO config_audit (ts, who, key, old_value, new_value, outcome, reason)"
-        " VALUES (?,?,?,?,?,?,?)",
+        "INSERT INTO config_audit"
+        " (ts, who, key, old_value, new_value, outcome, reason, prev_hash, hash)"
+        " VALUES (?,?,?,?,?,?,?,?,?)",
         (
-            datetime.now(UTC).isoformat(),
-            who,
-            key,
-            json.dumps(old),
-            json.dumps(new),
-            outcome,
-            reason,
+            row["ts"],
+            row["who"],
+            row["key"],
+            row["old_value"],
+            row["new_value"],
+            row["outcome"],
+            row["reason"],
+            prev,
+            config_hash(prev, row),
         ),
     )
     conn.commit()
@@ -205,10 +225,10 @@ def apply_change(
         reason = _forbidden(key)
         if reason is None and current.get("judge_mode") and key not in allowed_in_judge_mode:
             reason = "judge mode is on: settings are read-only"
-        if reason is None:
-            _set(candidate, key, value)
-        else:
-            _audit(conn, who, key, _get(current, key), value, "refused", reason)
+        if reason is None and not _set(candidate, key, value):
+            reason = "not a setting: the path goes below a plain value"
+        if reason is not None:
+            audit(conn, who, key, _get(current, key), value, "refused", reason)
             return False, f"{key}: {reason}"
 
     try:
@@ -217,35 +237,68 @@ def apply_change(
         error = exc.errors()[0]
         reason = f"{'.'.join(str(p) for p in error['loc'])}: {error['msg']}"
         for key, value in changes.items():
-            _audit(conn, who, key, _get(current, key), value, "refused", reason)
+            audit(conn, who, key, _get(current, key), value, "refused", reason)
         return False, reason
 
     rules_error = _check_rule_tuning(valid)
     if rules_error:
         for key, value in changes.items():
-            _audit(conn, who, key, _get(current, key), value, "refused", rules_error)
+            audit(conn, who, key, _get(current, key), value, "refused", rules_error)
         return False, rules_error
 
-    target.parent.mkdir(parents=True, exist_ok=True)
-    tmp = target.with_suffix(".tmp")
-    tmp.write_text(json.dumps(valid, indent=2), encoding="utf-8")
-    tmp.replace(target)
-    _publish_content(valid["content"])
-    for key in changes:
-        _audit(conn, who, key, _get(current, key), _get(valid, key), "applied", "")
+    content_target = content_path() if path is None else target.with_name("content.json")
+    old_settings = _read_bytes(target)
+    old_content = _read_bytes(content_target)
+    try:
+        # Content first, then settings, then the audit rows. Any failure puts both files back.
+        _write_atomic(content_target, json.dumps(valid["content"], indent=2))
+        _write_atomic(target, json.dumps(valid, indent=2))
+        for key in changes:
+            audit(conn, who, key, _get(current, key), _get(valid, key), "applied", "")
+    except Exception as exc:
+        _restore(target, old_settings)
+        _restore(content_target, old_content)
+        conn.rollback()
+        return False, f"change not applied, could not record it: {exc}"
     from qlure.correlate.rules import load_config  # local: avoid a circular import
 
     load_config.cache_clear()
     return True, "saved"
 
 
-def _publish_content(content: dict[str, Any]) -> None:
-    """The decoys read only this small file, never the full settings or the database."""
-    path = content_path()
+def _read_bytes(path: Path) -> bytes | None:
+    try:
+        return path.read_bytes()
+    except OSError:
+        return None
+
+
+def _restore(path: Path, data: bytes | None) -> None:
+    try:
+        if data is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_bytes(data)
+    except OSError:
+        pass
+
+
+def _write_atomic(path: Path, text: str) -> None:
+    """The decoys read only the small content file, never the full settings or the database."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(content, indent=2), encoding="utf-8")
+    tmp.write_text(text, encoding="utf-8")
     tmp.replace(path)
+
+
+# Listed in rules.yaml for the explanation text, but no rule code reads them.
+UNREAD_THRESHOLDS = {
+    ("R4", "pairs"),
+    ("R5", "matches"),
+    ("R6", "matches"),
+    ("R7", "uses"),
+    ("R9", "reads"),
+}
 
 
 def _check_rule_tuning(valid: dict[str, Any]) -> str | None:
@@ -264,6 +317,8 @@ def _check_rule_tuning(valid: dict[str, Any]) -> str | None:
         for name, number in values.items():
             if name not in rules[rule_id]["threshold"]:
                 return f"rules.thresholds.{rule_id}.{name}: unknown threshold"
+            if (rule_id, name) in UNREAD_THRESHOLDS:
+                return f"rules.thresholds.{rule_id}.{name}: no rule reads this threshold"
             if not 1 <= number <= 1000:
                 return f"rules.thresholds.{rule_id}.{name}: must be between 1 and 1000"
     return None
@@ -275,6 +330,8 @@ def rollback(conn: sqlite3.Connection, who: str, audit_id: int) -> tuple[bool, s
     ).fetchone()
     if row is None or row["outcome"] != "applied":
         return False, "only an applied change can be rolled back"
+    if row["key"].startswith("data."):
+        return False, "clearing data is recorded here but cannot be rolled back"
     return apply_change(conn, who, {row["key"]: json.loads(row["old_value"])})
 
 

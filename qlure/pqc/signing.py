@@ -79,7 +79,7 @@ def sign(
                     continue
                 seq = row["seq"]
             signature = signer.sign(message(seq, row["hash"]))
-            conn.execute(
+            inserted = conn.execute(
                 "INSERT OR IGNORE INTO checkpoints (upto_seq, head_hash, ts, algorithm, key_id,"
                 " signature) VALUES (?,?,?,?,?,?)",
                 (
@@ -91,7 +91,7 @@ def sign(
                     signature.hex(),
                 ),
             )
-            made += 1
+            made += inserted.rowcount  # 0 when OR IGNORE skipped an existing checkpoint
     conn.commit()
     return made
 

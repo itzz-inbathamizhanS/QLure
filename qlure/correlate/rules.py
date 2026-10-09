@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import posixpath
 import re
 from datetime import timedelta
 from functools import lru_cache
@@ -135,14 +136,19 @@ def _scan_text(event: Event) -> str:
         str(request.get("command", "")),
         *[str(v) for v in (request.get("headers") or {}).values()],
     ]
-    return unquote(unquote(" ".join(parts)))
+    raw = " ".join(parts)
+    # Raw text too: the decoded copy loses encoded dots ("%252e%252e" becomes "..").
+    return f"{raw} {unquote(unquote(raw))}"
 
 
 def r5_injection(session: Session) -> RuleHit | None:
     matched: list[Event] = []
     kinds: set[str] = set()
     for event in session.events:
-        if event.action.value not in ("http_request", "api_call", "command"):
+        # Web and API requests only. Every api_call repeats an http_request (it would count
+        # twice), and in the SSH shell `;`, `|`, `../` and /etc/passwd are ordinary typing that
+        # R8 and R9 already judge.
+        if event.action.value != "http_request":
             continue
         text = _scan_text(event)
         for kind, pattern in _injection():
@@ -185,6 +191,7 @@ def r8_post_login(session: Session) -> RuleHit | None:
     for e in commands:
         text = str((e.request or {}).get("command", ""))
         words = set(re.findall(r"[\w./-]+", text))
+        words |= {posixpath.basename(w) for w in words}  # ~/.ssh/authorized_keys too
         if words & danger:
             seen_danger.append(e)
         elif text.split()[:1] and text.split()[0] in discovery:
@@ -247,7 +254,9 @@ def r1_service_sweep(actor: Actor) -> RuleHit | None:
             for e in inside:
                 seen.setdefault(e.service.value, e)
             return _hit(
-                "R1", f"{len(services)} services touched within 60 seconds", list(seen.values())
+                "R1",
+                f"{len(services)} services touched within {int(window.total_seconds())} seconds",
+                list(seen.values()),
             )
     return None
 
@@ -260,8 +269,10 @@ def r10_kill_chain(actor: Actor, hits: list[RuleHit]) -> RuleHit | None:
                 first[hit.family] = hit.first_seen
     if len(first) < _threshold("R10", "families"):
         return None
-    times = [first[f] for f in FAMILY_ORDER]
-    if not (times[0] <= times[1] <= times[2]):
+    # The families present must appear in kill-chain order. (Indexing all three would raise
+    # KeyError once an operator lowers the threshold to 2.)
+    times = [first[f] for f in FAMILY_ORDER if f in first]
+    if times != sorted(times):
         return None
     evidence = [e for h in hits if h.family in FAMILY_ORDER for e in h.evidence]
     spec = load_config()["rules"]["R10"]
@@ -272,7 +283,7 @@ def r10_kill_chain(actor: Actor, hits: list[RuleHit]) -> RuleHit | None:
         weight=spec["weight"],
         confidence=spec["confidence"],
         attack=tuple(spec["attack"]),
-        measured="recon, then credential attacks, then misuse",
+        measured=", then ".join(f for f in FAMILY_ORDER if f in first),
         threshold=spec["threshold_text"],
         evidence=tuple(dict.fromkeys(evidence)),
         first_seen=times[0],

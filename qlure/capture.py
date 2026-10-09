@@ -86,7 +86,7 @@ def stop(
     began = datetime.fromisoformat(run["start"])
     ended = now or datetime.now(UTC)
 
-    lines: list[str] = []
+    kept: list[tuple[datetime, str]] = []
     for path in sorted(logs.glob("*.jsonl")):
         for line in path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
@@ -96,8 +96,10 @@ def stop(
                 continue
             if run["src_ip"] and event.src_ip != run["src_ip"]:
                 continue
-            lines.append(line)
-    lines.sort(key=lambda ln: json.loads(ln)["ts"])
+            kept.append((event.ts, line))
+    # Sort on the parsed time: the JSON text drops ".000000", so string order is not time order.
+    kept.sort(key=lambda pair: pair[0])
+    lines = [line for _, line in kept]
 
     target = captures / run["split"] / run["run_id"]
     target.mkdir(parents=True, exist_ok=False)

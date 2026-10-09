@@ -8,7 +8,8 @@ change. It is built with FastAPI and HTMX, so pages update without a full reload
 - A separate process (in Docker, the `dashboard` service) on port **9000** inside the container,
   published as `127.0.0.1:9000`. Running it natively, you choose the port (we used 9100).
 - It is **not** on the decoy network. It cannot reach a decoy, and no decoy can reach it.
-- It reads `logs/` read-only and writes only `data/` (the database and the settings file).
+- It reads `logs/` and writes `data/` (the database and the settings file). The one exception is
+  Clear All, which also empties the logs (see below).
 - It has no control over Docker. Changes that need a restart are saved, but the operator restarts
   the decoys by hand.
 
@@ -62,11 +63,17 @@ before and after. `/config/rollback/{audit_id}` restores an earlier state. Nothi
 
 ### Judge mode
 
-A read-only mode. Everything is visible, nothing can be changed. Use it when someone else is
-reviewing the work.
+A read-only mode for when someone else is reviewing the work. While it is on, settings cannot be
+changed (except the judge mode switch itself), labels cannot be saved, and Clear All is refused.
+It is a UI mode, not a lock: the same admin can switch it off on the settings page.
 
-## Why it is read-only where it is
+## What the dashboard can change
 
-The dashboard reads logs and writes only to `data/`. A compromised dashboard therefore cannot
-rewrite the evidence, because the hash chain (see [page 4](04-storage-and-integrity.md)) would
-show it.
+The dashboard cannot edit an event in place: no code path updates a stored event, and an edit to
+a kept row breaks the hash chain (see [page 4](04-storage-and-integrity.md)).
+
+Clear All is the exception. It deletes every row in `events`, `sessions`, `actors`, `findings`,
+`forwarder_state`, `labels` and `checkpoints`, and it empties the JSONL logs. It is refused in
+judge mode and always audited. After a clear, `verify` passes with 0 events, because there is no
+history left to check. Clearing is a deliberate wipe, not a hidden rewrite, but it does mean the
+dashboard's admin can destroy the evidence it holds.

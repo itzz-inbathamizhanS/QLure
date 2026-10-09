@@ -93,19 +93,44 @@ def _cmd_pwd(args: list[str], state: ShellState) -> str:
     return f"{state.cwd}\n"
 
 
+def _flags(args: list[str]) -> str:
+    return "".join(a[1:] for a in args if a.startswith("-") and not a.startswith("--"))
+
+
+def _ls_line(state: ShellState, path: str, name: str) -> str:
+    if state.fs.is_dir(path):
+        return f"drwxr-xr-x 2 {state.user} {state.user}  4096 Oct  8 18:20 {name}"
+    size = len(state.fs.files.get(path, ""))
+    return f"-rw-r--r-- 1 {state.user} {state.user} {size:>5} Oct  8 18:20 {name}"
+
+
 def _cmd_ls(args: list[str], state: ShellState) -> str:
-    target = _resolve(state, args[0]) if args else state.cwd
+    # Flags such as -la are options, not paths (`ls -la` is the most common first command).
+    flags = _flags(args)
+    paths = [a for a in args if not a.startswith("-")]
+    target = _resolve(state, paths[0]) if paths else state.cwd
     if state.fs.is_file(target):
-        return f"{posixpath.basename(target)}\n"
+        name = paths[0]
+        return (_ls_line(state, target, name) if "l" in flags else name) + "\n"
     if not state.fs.is_dir(target):
-        return f"ls: cannot access '{args[0] if args else '.'}': No such file or directory\n"
+        return f"ls: cannot access '{paths[0] if paths else '.'}': No such file or directory\n"
     names = state.fs.children(target)
-    return "\n".join(names) + "\n" if names else ""
+    if "a" in flags:
+        names = [".", "..", *names]
+    else:
+        names = [n for n in names if not n.startswith(".")]
+    if "l" not in flags:
+        return "\n".join(names) + "\n" if names else ""
+    rows = [
+        _ls_line(state, posixpath.join(target, n) if n not in (".", "..") else target, n)
+        for n in names
+    ]
+    return f"total {4 * len(rows)}\n" + "".join(f"{r}\n" for r in rows)
 
 
 def _cmd_cat(args: list[str], state: ShellState) -> str:
     out = []
-    for arg in args:
+    for arg in (a for a in args if not a.startswith("-") or a == "-"):
         path = _resolve(state, arg)
         if path in state.fs.files:
             out.append(state.fs.files[path])
@@ -443,12 +468,78 @@ COMMANDS: dict[str, Callable[[list[str], ShellState], str]] = {
 }
 
 
+FILTERS = {"grep", "head", "tail", "wc"}
+_OPERATORS = (";", "&&", "||", "|")
+
+
+def _split(line: str) -> list[tuple[str, list[str]]]:
+    """Split a line into (operator before it, argv) parts on ; && || and |, outside quotes."""
+    lexer = shlex.shlex(line, posix=True, punctuation_chars=";&|")
+    lexer.whitespace_split = True
+    parts: list[tuple[str, list[str]]] = []
+    joiner, argv = ";", []
+    for token in lexer:
+        if token in _OPERATORS:
+            parts.append((joiner, argv))
+            joiner, argv = token, []
+        elif set(token) <= set(";&|"):
+            raise ValueError(token)  # e.g. a lone & or |||
+        else:
+            argv.append(token)
+    parts.append((joiner, argv))
+    return parts
+
+
+def _filter(name: str, args: list[str], text: str) -> str:
+    """grep, head, tail or wc reading piped text instead of a file."""
+    lines = _lines(text)
+    if name == "grep":
+        plain = _file_args(args)
+        needle = plain[0].lower() if plain else ""
+        return "".join(f"{ln}\n" for ln in lines if needle in ln.lower())
+    if name == "head":
+        return "".join(f"{ln}\n" for ln in lines[: _count(args)])
+    if name == "tail":
+        return "".join(f"{ln}\n" for ln in lines[-_count(args) :])
+    return f"{len(lines):>7} {len(text.split()):>7} {len(text):>7}\n"
+
+
 def run(line: str, state: ShellState) -> str:
-    """Answer one command line. Returns the text the terminal should show."""
+    """Answer one command line. Returns the text the terminal should show.
+
+    `a; b`, `a && b`, `a || b` and `a | grep x` work the way a visitor expects: each part is
+    answered from the same tables, and a piped grep, head, tail or wc filters the text before it.
+    """
     try:
-        argv = shlex.split(line)
+        parts = _split(line)
     except ValueError:
-        return "bash: syntax error: unexpected end of file\n"
+        return "bash: syntax error near unexpected token\n"
+    if len(parts) == 1:
+        return _run_one(parts[0][1], state)
+    out: list[str] = []
+    piped: str | None = None
+    for i, (joiner, argv) in enumerate(parts):
+        if not argv:
+            return f"bash: syntax error near unexpected token `{parts[i][0] if i else ';'}'\n"
+        following = parts[i + 1][0] if i + 1 < len(parts) else ";"
+        if (
+            joiner == "|"
+            and piped is not None
+            and argv[0] in FILTERS
+            and len(_file_args(argv[1:])) <= (argv[0] == "grep")
+        ):
+            text = _filter(argv[0], argv[1:], piped)
+        else:
+            text = _run_one(argv, state)
+        if following == "|":
+            piped = text
+            continue
+        piped = None
+        out.append(text)
+    return "".join(out)
+
+
+def _run_one(argv: list[str], state: ShellState) -> str:
     if not argv:
         return ""
     name, args = argv[0], argv[1:]
@@ -466,6 +557,9 @@ def run(line: str, state: ShellState) -> str:
 
 def _display_cwd(state: ShellState) -> str:
     return "~" if state.cwd == HOME else state.cwd
+
+
+MAX_LINE = 4096
 
 
 async def _read_line(process: Any) -> str | None:
@@ -487,6 +581,9 @@ async def _read_line(process: Any) -> str | None:
             continue
         if ch < " ":
             continue
+        if len(typed) >= MAX_LINE:
+            process.stdout.write("\r\n")
+            return None  # an endless line is not a person typing: drop the connection
         typed.append(ch)
         process.stdout.write(ch)
 

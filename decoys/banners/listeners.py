@@ -8,6 +8,7 @@ line first so events carry the real visitor address.
 from __future__ import annotations
 
 import asyncio
+import itertools
 import secrets
 import string
 import struct
@@ -20,7 +21,7 @@ from decoys.common import BadProxyHeader, read_proxy_header
 from qlure.events import Action, Service, emit
 
 READ_TIMEOUT = 10
-FTP_BANNER = b"220 ProFTPD 1.3.8 Server (Veltrix Files)\r\n"
+FTP_BANNER = b"220 ProFTPD 1.3.8 Server (Veltrix Files)\r\n"  # the default greeting
 REDIS_NOAUTH = b"-NOAUTH Authentication required.\r\n"
 
 
@@ -93,9 +94,21 @@ async def _handle(
     emit({**base, "action": Action.DISCONNECT})
 
 
+_mysql_ids = itertools.count(1)
+
+
+def next_mysql_greeting() -> bytes:
+    """A fresh scramble and a rising connection id on every connect, as a real server sends.
+
+    One greeting built at import would repeat the same salt and id 1 to every visitor, which
+    is a well-known way to spot a honeypot.
+    """
+    return mysql_greeting(next(_mysql_ids))
+
+
 LISTENERS: list[tuple[Service, int, bytes | Callable[[], bytes]]] = [
     (Service.FTP, 2121, content.ftp_greeting),
-    (Service.MYSQL, 3306, mysql_greeting()),
+    (Service.MYSQL, 3306, next_mysql_greeting),
     (Service.REDIS, 6379, b""),
 ]
 

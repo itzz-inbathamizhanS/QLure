@@ -21,3 +21,11 @@ def read_events(log_dir):
         return [Event.model_validate_json(line) for line in path.read_text().splitlines()]
 
     return read
+
+
+@pytest.fixture(autouse=True)
+def _isolated_settings(tmp_path, monkeypatch):
+    """Never write to data/ or read an operator's settings during tests."""
+    monkeypatch.setenv("QLURE_SETTINGS", str(tmp_path / "settings.json"))
+    monkeypatch.setenv("QLURE_CONTENT", str(tmp_path / "content.json"))
+    monkeypatch.setenv("QLURE_MODEL", str(tmp_path / "model.json"))

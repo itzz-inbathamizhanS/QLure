@@ -157,7 +157,9 @@ def run(
     jars: dict[str, httpx.Client] = {}
     for req in requests:
         who = req.client or req.headers.get("user-agent", "")
-        visitor = jars.setdefault(who, client or httpx.Client(timeout=10, follow_redirects=False))
+        visitor = jars.get(who)
+        if visitor is None:  # one client per visitor, created only once
+            visitor = jars[who] = client or httpx.Client(timeout=10, follow_redirects=False)
         base = api_url if req.path.startswith("/api/") else web_url
         headers = {k: v for k, v in req.headers.items() if k not in SKIP_HEADERS}
         headers[TOKEN_HEADER] = token

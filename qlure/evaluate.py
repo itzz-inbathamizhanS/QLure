@@ -170,7 +170,9 @@ def evaluate(root: Path, model: Any = None) -> dict[str, Any]:
     for finding, _, entry in rows:
         if not entry or not entry.get("evidence"):
             continue
-        in_finding = {i for hit in finding.hits for i in hit.evidence}
+        # The same hits the verdict rests on: the actor's when only the actor made it Noteworthy.
+        hits = finding.actor_hits if _actor_flagged(finding) else finding.hits
+        in_finding = {i for hit in hits for i in hit.evidence}
         marked += len(entry["evidence"])
         linked += len(in_finding & set(entry["evidence"]))
 

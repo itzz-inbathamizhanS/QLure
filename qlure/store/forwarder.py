@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 import time
 from pathlib import Path
@@ -11,6 +12,8 @@ from pydantic import ValidationError
 from qlure.events import Event
 from qlure.store.chain import GENESIS, canonical, link_hash
 
+log = logging.getLogger(__name__)
+
 
 def _last_hash(conn: sqlite3.Connection) -> str:
     row = conn.execute("SELECT hash FROM events ORDER BY seq DESC LIMIT 1").fetchone()
@@ -19,13 +22,28 @@ def _last_hash(conn: sqlite3.Connection) -> str:
 
 def forward_once(conn: sqlite3.Connection, log_dir: Path) -> tuple[int, int]:
     """Ingest every new complete line. Returns (events stored, lines rejected)."""
+    # Take the write lock before reading the chain head, so a second writer cannot extend the
+    # chain between our read and our inserts.
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        prev = _last_hash(conn)
+        stored, rejected = _ingest(conn, log_dir, prev)
+    except BaseException:
+        conn.rollback()
+        raise
+    conn.commit()
+    return stored, rejected
+
+
+def _ingest(conn: sqlite3.Connection, log_dir: Path, prev: str) -> tuple[int, int]:
     stored = rejected = 0
-    prev = _last_hash(conn)
     for path in sorted(log_dir.glob("*.jsonl")):
         row = conn.execute(
             "SELECT offset FROM forwarder_state WHERE file=?", (path.name,)
         ).fetchone()
         offset = row["offset"] if row else 0
+        if offset > path.stat().st_size:
+            offset = 0  # the file shrank or was cleared: start over
         with path.open("rb") as fh:
             fh.seek(offset)
             while True:
@@ -69,11 +87,13 @@ def forward_once(conn: sqlite3.Connection, log_dir: Path) -> tuple[int, int]:
             " ON CONFLICT(file) DO UPDATE SET offset=excluded.offset",
             (path.name, offset),
         )
-    conn.commit()
     return stored, rejected
 
 
 def follow(conn: sqlite3.Connection, log_dir: Path, interval: float = 1.0) -> None:
     while True:
-        forward_once(conn, log_dir)
+        try:
+            forward_once(conn, log_dir)
+        except sqlite3.Error as e:
+            log.error("forwarder pass failed, will retry: %s", e)
         time.sleep(interval)

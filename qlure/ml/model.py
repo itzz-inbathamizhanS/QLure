@@ -88,13 +88,35 @@ class Model:
         )
 
 
+def _is_number(value: Any) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _fits(data: Any) -> bool:
+    """True only for a file this code can score with: right version, features and shapes."""
+    if not isinstance(data, dict) or data.get("version") != VERSION:
+        return False
+    if data.get("features") != FEATURES or not isinstance(data.get("meta"), dict):
+        return False
+    size = len(FEATURES)
+    for key in ("mean", "scale", "weights"):
+        values = data.get(key)
+        if not isinstance(values, list) or len(values) != size:
+            return False
+        if not all(_is_number(v) for v in values):
+            return False
+    if not all(v > 0 for v in data["scale"]):  # a zero scale would divide by zero
+        return False
+    return _is_number(data.get("bias"))
+
+
 def load(path: Path | None = None) -> Model | None:
     """The trained model, or None when none exists or it does not fit this code."""
     try:
         data = json.loads((path or model_path()).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    if data.get("version") != VERSION or data.get("features") != FEATURES:
+    if not _fits(data):
         return None
     return Model(data["mean"], data["scale"], data["weights"], data["bias"], data["meta"])
 

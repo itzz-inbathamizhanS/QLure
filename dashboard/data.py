@@ -108,7 +108,7 @@ def list_findings(conn: sqlite3.Connection, filters: dict[str, str]) -> list[dic
                 "last_seen": row["last_seen"],
                 "label": row["label"] or "unreviewed",
                 "ml_score": row["ml_score"],
-                "disagrees": disagrees(row["verdict"], row["ml_score"]),
+                "disagrees": disagrees(effective, row["ml_score"]),
                 "actor_score": row["actor_score"],
                 "actor_verdict": row["actor_verdict"],
                 "effective_verdict": effective,
@@ -204,7 +204,9 @@ def session_detail(conn: sqlite3.Connection, session_id: str) -> dict[str, Any] 
         "ml_why": row["ml_why"],
         "ml_factors": ml_factors(row["ml_why"]),
         "segments": score_segments(hits),
-        "disagrees": disagrees(row["verdict"], row["ml_score"]),
+        "disagrees": disagrees(
+            _effective(row["verdict"], row["actor_verdict"], len(hits)), row["ml_score"]
+        ),
         "actor_score": row["actor_score"],
         "actor_verdict": row["actor_verdict"],
         "actor_explanation": row["actor_explanation"],
@@ -311,7 +313,7 @@ def overview(conn: sqlite3.Connection) -> dict[str, Any]:
     ):
         effective = _effective(row["verdict"], row["actor_verdict"], len(_loads(row["hits"], [])))
         verdicts[effective] += 1
-        disagreements += disagrees(row["verdict"], row["ml_score"])
+        disagreements += disagrees(effective, row["ml_score"])
         reviewed += row["session_id"] in labelled
         actors[row["actor_id"]] = max(
             (actors.get(row["actor_id"], "Benign"), row["actor_verdict"] or "Benign"),

@@ -58,8 +58,9 @@ def _suppressors(session: Session, hits: list[RuleHit]) -> list[tuple[str, int]]
         found.append(("failed login then success", cfg["failed_then_success"]["subtract"]))
 
     requests = [e for e in session.events if e.action.value in REQUEST_ACTIONS]
-    if len(requests) < cfg["too_few_requests"]["min_requests"]:
-        found.append(("fewer than 3 requests", cfg["too_few_requests"]["subtract"]))
+    minimum = cfg["too_few_requests"]["min_requests"]
+    if len(requests) < minimum:
+        found.append((f"fewer than {minimum} requests", cfg["too_few_requests"]["subtract"]))
     return found
 
 
