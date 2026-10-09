@@ -105,7 +105,7 @@ services:
   egress-watch:
     <<: *decoy
     command: >
-      qlure watch-egress --proc-net /proc/net --out /var/lib/qlure/egress.jsonl --interval 5
+      qlure watch-egress --proc-net /proc/net --out /var/lib/qlure/egress.jsonl --interval 2
     network_mode: "service:web"
     depends_on: [web]
     volumes:

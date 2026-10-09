@@ -117,7 +117,7 @@ def scan(proc_net: str | Path = "/proc/net") -> list[dict[str, Any]]:
 def watch(
     out: Path,
     proc_net: str | Path = "/proc/net",
-    interval: float = 5.0,
+    interval: float = 2.0,
     iterations: int | None = None,
     sleep: Callable[[float], None] = time.sleep,
 ) -> int:
