@@ -1,6 +1,8 @@
 """The domain scanner page: login required, and the Q-CAPS guardrails hold through the page."""
 
+import copy
 import json
+import re
 
 import pytest
 from fastapi.testclient import TestClient
@@ -148,3 +150,233 @@ def test_pdf_report_needs_login(tmp_path, monkeypatch):
     app = create_app(db_path=tmp_path / "qlure.db", logs_dir=tmp_path / "logs")
     r = TestClient(app).post("/scanner/report.pdf", data={"report": "{}"}, follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/login"
+
+
+CSP = (
+    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; "
+    "connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+)
+EMPTY_TEXT = (
+    "No subdomains found in certificate logs for example.com. "
+    "Absence from the logs does not mean none exist."
+)
+
+
+def _result(**changes):
+    result = copy.deepcopy(RESULT)
+    result.update(changes)
+    return result
+
+
+def _ct_check(status="ok", reason=None):
+    check = {"status": status}
+    if reason:
+        check["reason"] = reason
+    return {"ct_subdomains": check}
+
+
+def _scan(client, monkeypatch, result):
+    monkeypatch.setattr(scanning, "run", lambda target: {"result": result})
+    return client.post("/scanner", data={"target": "example.com"})
+
+
+def test_subdomains_panel_found_state(client, monkeypatch):
+    names = [{"name": "www.example.com"}, {"name": "api.example.com"}]
+    r = _scan(
+        client,
+        monkeypatch,
+        _result(
+            subdomains=names,
+            ct_status="ok",
+            ct_reason=None,
+            ct_truncated=0,
+            related_names=[],
+            checks=_ct_check(),
+        ),
+    )
+    assert "2 subdomains found in certificate logs" in r.text
+    assert "api.example.com" in r.text
+    assert "more not shown" not in r.text
+    assert "dropped by the 50-name limit" not in r.text
+    assert "Related names on the parent domain" not in r.text
+    assert "Source: crt.sh certificate transparency logs (passive; no DNS guessing)." in r.text
+
+
+def test_subdomains_panel_empty_state(client, monkeypatch):
+    r = _scan(
+        client,
+        monkeypatch,
+        _result(
+            subdomains=[],
+            ct_status="empty",
+            ct_reason=None,
+            ct_truncated=0,
+            related_names=[],
+            checks=_ct_check("ok"),
+        ),
+    )
+    assert EMPTY_TEXT in r.text
+    assert 'class="subdomain-summary"' not in r.text
+
+
+def test_subdomains_panel_error_state(client, monkeypatch):
+    r = _scan(
+        client,
+        monkeypatch,
+        _result(
+            subdomains=[],
+            ct_status="error",
+            ct_reason="crt.sh answered HTTP 503",
+            ct_truncated=0,
+            related_names=[],
+            checks=_ct_check("failed", "crt.sh answered HTTP 503"),
+        ),
+    )
+    assert (
+        "Certificate-log lookup failed: crt.sh answered HTTP 503. Try again in a minute; "
+        "crt.sh is a third-party service and is often slow."
+    ) in r.text
+    assert "callout warn" in r.text
+    assert EMPTY_TEXT not in r.text
+
+
+def test_checks_table_explains_the_certificate_log_row(client, monkeypatch):
+    """The ct_subdomains row says what happened in words, not only the raw reason."""
+    r = _scan(
+        client,
+        monkeypatch,
+        _result(
+            subdomains=[{"name": "www.example.com"}],
+            ct_status="ok",
+            checks=_ct_check(),
+        ),
+    )
+    assert '<td class="muted small">1 name in certificate logs</td>' in r.text
+    r = _scan(
+        client,
+        monkeypatch,
+        _result(
+            subdomains=[],
+            ct_status="error",
+            ct_reason="timed out",
+            checks=_ct_check("failed", "timed out"),
+        ),
+    )
+    assert '<td class="muted small">Certificate-log lookup failed: timed out</td>' in r.text
+
+
+def test_related_names_section_appears_and_is_labelled(client, monkeypatch):
+    r = _scan(
+        client,
+        monkeypatch,
+        _result(
+            subdomains=[],
+            ct_status="empty",
+            ct_truncated=0,
+            related_names=["mail.example.org", "shop.example.org"],
+            checks=_ct_check("ok"),
+        ),
+    )
+    assert "Related names on the parent domain (not scanned)" in r.text
+    assert "shop.example.org" in r.text
+
+
+def test_truncation_notes(client, monkeypatch):
+    names = [{"name": f"h{i}.example.com"} for i in range(65)]
+    r = _scan(
+        client,
+        monkeypatch,
+        _result(
+            subdomains=names,
+            ct_status="ok",
+            ct_truncated=3,
+            related_names=[],
+            checks=_ct_check(),
+        ),
+    )
+    assert "65 subdomains found in certificate logs" in r.text
+    assert "and 5 more not shown" in r.text
+    assert "3 more were dropped by the 50-name limit" in r.text
+    assert '<span class="chip mono">h59.example.com</span>' in r.text
+    assert '<span class="chip mono">h60.example.com</span>' not in r.text
+
+
+def test_hostile_names_and_reasons_are_escaped(client, monkeypatch):
+    hostile_name = "<script>alert(1)</script>.example.com"
+    hostile_reason = "<img src=x onerror=alert(1)>"
+    r = _scan(
+        client,
+        monkeypatch,
+        _result(
+            subdomains=[{"name": hostile_name}],
+            ct_status="ok",
+            ct_truncated=0,
+            related_names=[],
+            checks=_ct_check(),
+        ),
+    )
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;.example.com" in r.text
+    assert "<script>alert(1)" not in r.text
+
+    r = _scan(
+        client,
+        monkeypatch,
+        _result(
+            subdomains=[],
+            ct_status="error",
+            ct_reason=hostile_reason,
+            ct_truncated=0,
+            related_names=[],
+            checks=_ct_check("failed", hostile_reason),
+        ),
+    )
+    assert "&lt;img src=x onerror=alert(1)&gt;" in r.text
+    assert "<img src=x" not in r.text
+
+
+def test_results_without_the_new_keys_still_render(client, monkeypatch):
+    r = _scan(client, monkeypatch, _result())  # RESULT has no ct_status or related_names
+    assert r.status_code == 200
+    assert "1 subdomain found in certificate logs" in r.text
+    assert "www.example.com" in r.text
+
+    old = _result(subdomains=[])
+    r = _scan(client, monkeypatch, old)
+    assert EMPTY_TEXT in r.text
+    assert "Related names" not in r.text
+
+
+def test_progress_state_uses_a_static_script_not_inline_js(client, monkeypatch):
+    r = _scan(client, monkeypatch, _result())
+    assert '<script src="/static/scanner.js" defer></script>' in r.text
+    assert 'class="scan-status"' in r.text
+    assert "Scanning... up to 30 s, please wait" in r.text
+    assert "data-scan-button" in r.text
+    # the only script tags are the ones with a src: no inline script
+    assert re.findall(r"<script(?![^>]*\ssrc=)", r.text) == []
+    assert "onsubmit" not in r.text
+    assert " style=" not in r.text
+
+    js = client.get("/static/scanner.js")
+    assert js.status_code == 200
+    assert "javascript" in js.headers["content-type"]
+    assert "data-scan-status" in js.text
+
+
+def test_csp_is_unchanged(client):
+    r = client.get("/scanner")
+    assert r.headers["content-security-policy"] == CSP
+
+
+def test_pdf_report_accepts_the_new_fields(client):
+    posted = _result(
+        subdomains=[{"name": "www.example.com", "source": "ct_log"}],
+        ct_status="error",
+        ct_reason="crt.sh answered HTTP 503",
+        ct_truncated=4,
+        related_names=["mail.example.org"],
+        checks=_ct_check("failed", "crt.sh answered HTTP 503"),
+    )
+    r = client.post("/scanner/report.pdf", data={"report": json.dumps(posted)})
+    assert r.status_code == 200
+    assert r.content.startswith(b"%PDF")

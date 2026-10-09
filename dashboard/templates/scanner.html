@@ -5,7 +5,7 @@
 <div class="stack">
 {% if outcome and outcome.error %}<div class="callout bad" role="alert"><svg class="icon"><use href="#i-alert"/></svg>{{ outcome.error }}</div>{% endif %}
 
-<form method="post" action="/scanner" class="stack">
+<form method="post" action="/scanner" class="stack" data-scan-form>
 <section class="panel">
   <div class="panel-head"><svg class="icon"><use href="#i-quantum"/></svg><h2>Scan a domain</h2></div>
   <div class="panel-body form-grid">
@@ -13,10 +13,11 @@
       <input type="text" name="target" value="{{ target }}" placeholder="example.com" autocomplete="off" required>
     </label>
   </div>
-  <div class="panel-foot">
+  <div class="panel-foot scan-foot">
     <span class="hint">Ports and IP addresses are not accepted. Private and internal addresses are refused. Results are shown here only and are not saved.</span>
     <span class="spacer"></span>
-    <button type="submit">Run scan</button>
+    <button type="submit" data-scan-button>Run scan</button>
+    <span class="scan-status" role="status" data-scan-status>Scanning... up to 30 s, please wait</span>
   </div>
 </section>
 </form>
@@ -73,10 +74,16 @@
         <thead><tr><th>Check</th><th>Status</th><th>Detail</th></tr></thead>
         <tbody>
         {% for name, c in r.checks.items() if c.status != 'requires_verification' %}
+          {% set detail = c.reason or '' %}
+          {% if name == 'ct_subdomains' %}
+            {% if c.status == 'failed' %}{% set detail = 'Certificate-log lookup failed: ' ~ (c.reason or 'unknown error') %}
+            {% elif r.subdomains %}{% set detail = (r.subdomains | length) ~ (' name' if r.subdomains | length == 1 else ' names') ~ ' in certificate logs' %}
+            {% else %}{% set detail = 'No names in certificate logs' %}{% endif %}
+          {% endif %}
           <tr>
             <td class="mono">{{ name }}</td>
             <td><span class="chip {{ 'bad' if c.status == 'failed' }}">{{ c.status | replace('_', ' ') }}</span></td>
-            <td class="muted small">{{ c.reason or '' }}</td>
+            <td class="muted small">{{ detail }}</td>
           </tr>
         {% endfor %}
         </tbody>
@@ -101,12 +108,42 @@
   </div>
 </section>
 
-{% if r.subdomains %}
-<section class="panel">
-  <div class="panel-head"><svg class="icon"><use href="#i-sessions"/></svg><h2>Subdomains</h2><span class="hint">from certificate transparency logs</span></div>
-  <div class="panel-body"><div class="row">{% for s in r.subdomains[:60] %}<span class="chip mono">{{ s.name }}</span>{% endfor %}</div></div>
+<section class="panel" aria-labelledby="subdomains-title">
+  <div class="panel-head"><svg class="icon"><use href="#i-sessions"/></svg><h2 id="subdomains-title">Subdomains</h2><span class="hint">from certificate transparency logs</span></div>
+  <div class="panel-body stack">
+    {% set names = r.subdomains or [] %}
+    {% set n = names | length %}
+    {% set ct_status = r.ct_status or ('ok' if names else 'empty') %}
+    {% set shown = names[:60] %}
+    {% set hidden = n - (shown | length) %}
+    {% set dropped = r.ct_truncated or 0 %}
+    {% set host = (r.target_url or '') | replace('https://', '') | replace('http://', '') | trim('/') %}
+    {% if ct_status == 'error' %}
+      <div class="callout warn" role="status"><svg class="icon"><use href="#i-alert"/></svg><div>Certificate-log lookup failed: {{ r.ct_reason or 'unknown error' }}. Try again in a minute; crt.sh is a third-party service and is often slow.</div></div>
+    {% elif names %}
+      <div>
+        <h3 class="subdomain-summary">{{ n }} {{ 'subdomain' if n == 1 else 'subdomains' }} found in certificate logs</h3>
+        <ul class="chips subdomain-names" aria-label="Subdomains">
+          {% for s in shown %}<li><span class="chip mono">{{ s.name }}</span></li>{% endfor %}
+        </ul>
+        {% if hidden > 0 %}<p class="subdomain-note">and {{ hidden }} more not shown</p>{% endif %}
+        {% if dropped > 0 %}<p class="subdomain-note">{{ dropped }} more were dropped by the 50-name limit</p>{% endif %}
+      </div>
+    {% else %}
+      <p class="muted">No subdomains found in certificate logs for {{ host }}. Absence from the logs does not mean none exist.</p>
+    {% endif %}
+    {% if r.related_names %}
+      <div>
+        <h3 class="subdomain-head">Related names on the parent domain (not scanned)</h3>
+        <ul class="chips subdomain-names" aria-label="Related names">
+          {% for name in r.related_names %}<li><span class="chip mono">{{ name }}</span></li>{% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+    <p class="subdomain-note">Source: crt.sh certificate transparency logs (passive; no DNS guessing).</p>
+  </div>
 </section>
 {% endif %}
-{% endif %}
 </div>
+<script src="/static/scanner.js" defer></script>
 {% endblock %}
