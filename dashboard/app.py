@@ -15,6 +15,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, closing, suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from importlib import metadata
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse
@@ -28,6 +29,7 @@ from starlette.concurrency import run_in_threadpool
 from dashboard import data, scanning
 from dashboard.auth import COOKIE, LIFETIME, Auth
 from dashboard.report import scan_pdf
+from qlure import export as ioc_export
 from qlure import settings as cfg
 from qlure.correlate import store as correlate_store
 from qlure.store import db
@@ -53,7 +55,30 @@ MAX_REPORT_BYTES = 2_000_000
 LIVE_DEFAULT_SECONDS = 10  # QLURE_LIVE_INTERVAL: how often the background correlation runs
 LIVE_MIN_SECONDS = 2
 LIVE_POLL_SECONDS = 5  # how often an open overview asks for its rows (a cheap read)
+# Pages that answer without a login. /metrics joins them only when QLURE_METRICS_PUBLIC=1.
+PUBLIC_PATHS = ("/login", "/favicon.ico", "/healthz")
+METRICS_TYPE = "text/plain; version=0.0.4"  # the Prometheus text exposition format
+# The three IOC downloads: the route suffix maps to (export format, Content-Type, file extension).
+EXPORT_FILES = {
+    "csv": ("csv", "text/csv; charset=utf-8", "csv"),
+    "json": ("stix", "application/stix+json; version=2.1", "json"),
+    "txt": ("blocklist", "text/plain; charset=utf-8", "txt"),
+}
 log = logging.getLogger(__name__)
+
+
+def _package_version() -> str:
+    try:
+        return metadata.version("qlure")
+    except metadata.PackageNotFoundError:
+        return "unknown"
+
+
+def _export_min(raw: str | None) -> str | None:
+    """The verdict floor an export asks for: noteworthy, or suspicious. None when unknown."""
+    if not raw:
+        return ioc_export.DEFAULT_MIN_VERDICT
+    return raw if raw in ioc_export.MIN_VERDICTS else None
 
 
 def _when(value: str | None) -> str:
@@ -200,7 +225,10 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
             cross_site = request.headers.get("sec-fetch-site") == "cross-site"
             if cross_site or (origin and urlparse(origin).netloc != request.headers.get("host")):
                 return Response("Cross-site request refused", status_code=403)
-        if not path.startswith("/static") and path not in ("/login", "/favicon.ico"):
+        public = path in PUBLIC_PATHS or (
+            path == "/metrics" and os.environ.get("QLURE_METRICS_PUBLIC", "").strip() == "1"
+        )
+        if not path.startswith("/static") and not public:
             if not auth.valid(request.cookies.get(COOKIE)):
                 return RedirectResponse("/login", status_code=303)
         response = await call_next(request)
@@ -216,6 +244,39 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
     async def favicon() -> Response:
         # Public and static, like /static: browsers ask for it before any login.
         return FileResponse(HERE / "static" / "favicon.svg", media_type="image/svg+xml")
+
+    def store_snapshot() -> dict[str, Any] | None:
+        """Cheap counts from the store, read-only. None when the store cannot be read."""
+        try:
+            with closing(data.open_read_only(db_file)) as c:
+                return data.store_counts(c)
+        except sqlite3.Error:
+            return None
+
+    @app.get("/healthz", include_in_schema=False)
+    async def healthz() -> Response:
+        """Liveness and store check for probes. Counts and times only: no paths or config."""
+        counts = await run_in_threadpool(store_snapshot)
+        live = feed.task is not None and not feed.task.done()
+        body: dict[str, Any] = {
+            "status": "ok" if counts is not None else "degraded",
+            "db": "ok" if counts is not None else "error",
+            "events": counts["events"] if counts else None,
+            "sessions": counts["sessions"] if counts else None,
+            "last_forward": counts["newest"] if counts else None,
+            "live": live,
+            "version": _package_version(),
+        }
+        return JSONResponse(body, status_code=200 if counts is not None else 503)
+
+    @app.get("/metrics", include_in_schema=False)
+    async def metrics() -> Response:
+        """Prometheus text. Login is required unless QLURE_METRICS_PUBLIC=1 (see the guard)."""
+        counts = await run_in_threadpool(store_snapshot)
+        if counts is None:
+            return Response("store unavailable\n", status_code=503, media_type="text/plain")
+        last_pass = feed.updated.timestamp() if feed.updated else 0.0
+        return Response(data.metrics_text(counts, last_pass), media_type=METRICS_TYPE)
 
     @app.get("/login", response_class=HTMLResponse)
     async def login_page(request: Request) -> Response:
@@ -299,6 +360,49 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
         if detail is None:
             return page(request, "missing.html", status=404)
         return page(request, "actor.html", nav="actors", a=detail)
+
+    @app.get("/export", response_class=HTMLResponse)
+    async def export_page(request: Request) -> Response:
+        min_verdict = _export_min(request.query_params.get("min"))
+        if min_verdict is None:
+            return Response("min must be noteworthy or suspicious", status_code=400)
+        query = "?min=suspicious" if min_verdict == "suspicious" else ""
+        return page(
+            request,
+            "export.html",
+            nav="export",
+            min_verdict=min_verdict,
+            query=query,
+        )
+
+    async def indicator_download(request: Request, suffix: str) -> Response:
+        """One IOC export as a download. It only reads the store, so judge mode allows it."""
+        fmt, media_type, extension = EXPORT_FILES[suffix]
+        min_verdict = _export_min(request.query_params.get("min"))
+        if min_verdict is None:
+            return Response("min must be noteworthy or suspicious", status_code=400)
+        try:
+            body = await run_in_threadpool(ioc_export.render, db_file, fmt, min_verdict)
+        except ioc_export.ExportError:
+            return Response("The store cannot be read.", status_code=503)
+        name = f"qlure-indicators-{datetime.now(UTC):%Y%m%d}.{extension}"
+        return Response(
+            body,
+            media_type=media_type,
+            headers={"Content-Disposition": f'attachment; filename="{name}"'},
+        )
+
+    @app.get("/export.csv")
+    async def export_csv(request: Request) -> Response:
+        return await indicator_download(request, "csv")
+
+    @app.get("/export.json")
+    async def export_json(request: Request) -> Response:
+        return await indicator_download(request, "json")
+
+    @app.get("/export.txt")
+    async def export_txt(request: Request) -> Response:
+        return await indicator_download(request, "txt")
 
     @app.post("/refresh")
     async def refresh() -> Response:

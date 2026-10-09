@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Q-Lure indicator export{% endblock %}
+{% block topbar %}
+  <div><h1>Indicator export</h1>
+  <p class="muted small">Decoy-observed indicators from this store. Each download only reads the database. Visitors chose these addresses, so review an indicator before you block or share it.</p></div>
+{% endblock %}
+{% block content %}
+<div class="stack">
+<section class="panel" aria-labelledby="export-h">
+  <div class="panel-head"><h2 id="export-h">Download</h2><span class="hint">sessions at or above {{ min_verdict }}</span></div>
+  <div class="panel-body stack">
+    <div class="row">
+      <a class="btn" href="/export.csv{{ query }}"><svg class="icon"><use href="#i-download"/></svg>CSV</a>
+      <a class="btn secondary" href="/export.json{{ query }}"><svg class="icon"><use href="#i-download"/></svg>STIX 2.1 bundle (JSON)</a>
+      <a class="btn secondary" href="/export.txt{{ query }}"><svg class="icon"><use href="#i-download"/></svg>Blocklist (text)</a>
+    </div>
+    <p class="muted small">
+      {% if min_verdict == 'suspicious' %}Including Suspicious sessions. <a href="/export">Show Noteworthy only</a>.
+      {% else %}Noteworthy sessions only. <a href="/export?min=suspicious">Include Suspicious sessions</a>.{% endif %}
+    </p>
+  </div>
+</section>
+
+<section class="panel" aria-labelledby="formats-h">
+  <div class="panel-head"><h2 id="formats-h">What each file holds</h2></div>
+  <div class="panel-body">
+    <ul class="plain">
+      <li><b>CSV</b>: one row per indicator (IP address, user agent, URL path, credential hash, honeytoken ID). Cells that start with a formula character are prefixed with a quote.</li>
+      <li><b>STIX 2.1 bundle</b>: indicators for IP addresses and hashes, linked to the ATT&amp;CK techniques they were seen with.</li>
+      <li><b>Blocklist</b>: one IP address per line. Loopback, link-local and private addresses are left out.</li>
+    </ul>
+  </div>
+</section>
+</div>
+{% endblock %}

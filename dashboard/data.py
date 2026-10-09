@@ -6,6 +6,7 @@ import json
 import re
 import sqlite3
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from qlure.events import Event
@@ -735,3 +736,78 @@ def attack_matrix(conn: sqlite3.Connection) -> dict[str, Any]:
         # Seen in the store but not in the table: listed so nothing the rules emit is hidden.
         "other": [cell(tid, None) for tid in sorted(hit_count) if tid not in ATTACK_TECHNIQUES],
     }
+
+
+# Probes and scrapers read the store with a short wait: a busy store answers "error" instead of
+# holding the request open.
+READ_TIMEOUT_SECONDS = 1.0
+VERDICT_LABELS = ("benign", "suspicious", "noteworthy")
+
+
+def open_read_only(path: Path) -> sqlite3.Connection:
+    """Open the store with mode=ro. A missing file raises sqlite3.Error; nothing is created."""
+    uri = f"{path.resolve().as_uri()}?mode=ro"
+    return sqlite3.connect(uri, uri=True, timeout=READ_TIMEOUT_SECONDS)
+
+
+def store_counts(conn: sqlite3.Connection) -> dict[str, Any]:
+    """Totals for /healthz and /metrics: plain counts, one pass over findings and one newest row.
+
+    Sessions are counted by the effective verdict the sessions page shows. `newest` is the time of
+    the newest stored event: the store keeps no forwarding timestamp of its own.
+    """
+    verdicts = dict.fromkeys(VERDICT_LABELS, 0)
+    for verdict, actor_verdict, hits in conn.execute(
+        "SELECT verdict, actor_verdict, hits FROM findings"
+    ):
+        effective = _effective(verdict, actor_verdict, len(_loads(hits, [])))
+        verdicts[effective.lower()] += 1
+    newest = conn.execute("SELECT ts FROM events ORDER BY seq DESC LIMIT 1").fetchone()
+    return {
+        "events": conn.execute("SELECT COUNT(*) FROM events").fetchone()[0],
+        "sessions": conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0],
+        "actors": conn.execute("SELECT COUNT(*) FROM actors").fetchone()[0],
+        "honeytoken_hits": conn.execute(
+            "SELECT COUNT(*) FROM events WHERE honeytoken_id IS NOT NULL"
+        ).fetchone()[0],
+        "verdicts": verdicts,
+        "newest": newest[0] if newest else None,
+    }
+
+
+def escape_label(value: str) -> str:
+    """A label value in the Prometheus text format: backslash, double quote and newline escaped."""
+    return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
+def metrics_text(counts: dict[str, Any], last_pass: float) -> str:
+    """The Prometheus text exposition. Clearing the store lowers the counts, so they are gauges."""
+    families: list[tuple[str, str, str, list[tuple[str, Any]]]] = [
+        ("qlure_events_total", "gauge", "Events stored in the database.", [("", counts["events"])]),
+        (
+            "qlure_sessions_total",
+            "gauge",
+            "Sessions by effective verdict, counted as the sessions page counts them.",
+            [(f'verdict="{escape_label(v)}"', counts["verdicts"][v]) for v in VERDICT_LABELS],
+        ),
+        ("qlure_actors_total", "gauge", "Actors in the database.", [("", counts["actors"])]),
+        (
+            "qlure_honeytoken_hits_total",
+            "gauge",
+            "Events that used a honeytoken.",
+            [("", counts["honeytoken_hits"])],
+        ),
+        (
+            "qlure_live_last_pass_timestamp_seconds",
+            "gauge",
+            "Unix time of the last background correlation pass; 0 if none has finished.",
+            [("", round(last_pass, 3))],
+        ),
+    ]
+    lines: list[str] = []
+    for name, kind, help_text, samples in families:
+        lines.append(f"# HELP {name} {help_text}")
+        lines.append(f"# TYPE {name} {kind}")
+        for labels, value in samples:
+            lines.append(f"{name}{{{labels}}} {value}" if labels else f"{name} {value}")
+    return "\n".join(lines) + "\n"
