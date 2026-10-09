@@ -6,6 +6,7 @@ way in. Every request, every record ID tried and every key used is logged.
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
@@ -17,6 +18,8 @@ from qlure.events import Action, Service, emit
 
 # Header that carries each planted key, and the honeytoken it belongs to.
 KEY_HEADERS = {"x-api-key": "ht-api-001", "x-aws-access-key": "ht-aws-001"}
+BODY_PREVIEW_CHARS = 2048
+KEY_LOG_CHARS = 128
 LOGGED_HEADERS = ("user-agent", "accept", "content-type", "x-forwarded-for")
 
 USERS: list[dict[str, Any]] = [
@@ -59,6 +62,25 @@ def _key_token(request: Request) -> str | None:
     return None
 
 
+def _body_summary(body: bytes) -> dict[str, Any]:
+    """Same fields as the web decoy, so the rules scan API bodies the same way."""
+    return {
+        "body_len": len(body),
+        "body_sha256": hashlib.sha256(body).hexdigest(),
+        "body_preview": body[:BODY_PREVIEW_CHARS].decode("utf-8", errors="replace"),
+    }
+
+
+def _presented_key(request: Request) -> str | None:
+    """The key a caller offered (capped), or None when no credential was sent at all."""
+    value = request.headers.get("x-api-key") or request.headers.get("x-aws-access-key")
+    if not value:
+        auth = request.headers.get("authorization", "")
+        if auth.lower().startswith("bearer "):
+            value = auth[7:].strip()
+    return value[:KEY_LOG_CHARS] if value else None
+
+
 def require_key(request: Request) -> None:
     if _key_token(request) is None:
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
@@ -98,7 +120,7 @@ async def observe(request: Request, call_next):
             "request": {
                 **call,
                 "headers": {k: v for k, v in request.headers.items() if k in LOGGED_HEADERS},
-                "body_len": len(body),
+                **_body_summary(body),
             },
             "response": {"status": response.status_code},
         }
@@ -115,6 +137,19 @@ async def observe(request: Request, call_next):
         )
     if token_id is not None:
         emit({**base, "action": Action.HONEYTOKEN_USE, "honeytoken_id": token_id, "request": call})
+    else:
+        presented = _presented_key(request)
+        if presented is not None and response.status_code != 413:
+            # Key guessing looks like a failed login to the correlation rules (R3).
+            emit(
+                {
+                    **base,
+                    "action": Action.LOGIN_ATTEMPT,
+                    "request": call,
+                    "credential": {"username": "api-key", "password": presented},
+                    "response": {"status": response.status_code},
+                }
+            )
     return response
 
 
