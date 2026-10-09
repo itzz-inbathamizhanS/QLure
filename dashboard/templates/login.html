@@ -3,6 +3,7 @@
 {% block body %}
 <main class="login">
   <div class="panel login-card">
+    {% include "_theme_toggle.html" %}
     {% include "_brand.html" %}
     <h1>Sign in</h1>
     <p class="muted small">Investigator console for the Q-Lure decoys. {% if hosted %}This is a hosted demo with sample captured data.{% else %}This page is served on localhost only.{% endif %}</p>

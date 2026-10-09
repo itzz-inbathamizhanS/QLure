@@ -3,9 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
 <title>{% block title %}Q-Lure{% endblock %}</title>
 <link rel="icon" href="/favicon.ico" type="image/svg+xml">
+<script src="/static/theme.js"></script>
 <link rel="stylesheet" href="/static/app.css">
 <script src="/static/htmx.min.js" defer></script>
 </head>
@@ -25,6 +27,7 @@
     <div class="sidebar-foot">
       {% if judge_mode %}<div class="judge"><svg class="icon"><use href="#i-lock"/></svg>Judge mode: read-only</div>{% endif %}
       <div class="status-card">{{ "Hosted demo" if hosted else "Localhost only" }}</div>
+      {% include "_theme_toggle.html" %}
       <form method="post" action="/logout"><button class="ghost sm" type="submit"><svg class="icon"><use href="#i-logout"/></svg>Log out</button></form>
     </div>
   </aside>
