@@ -247,7 +247,7 @@ Run every command from the repository root. Defaults: database `data/qlure.db`, 
 | Command | What it does | Details |
 |---|---|---|
 | `qlure schema [--check]` | Export the event JSON Schema, or fail if `docs/event.schema.json` is stale | [event.schema.json](docs/event.schema.json) |
-| `qlure validate FILES...` | Check JSONL event files against the schema | the Run it section |
+| `qlure validate FILES...` | Check JSONL event files against the schema; exit 1 if any line is invalid | the Run it section |
 | `qlure forward [--follow]` | Copy new JSONL events into the store | [architecture 2](docs/architecture/02-data-flow.md) |
 | `qlure verify [--pub FILE]` | Check the hash chain against the JSONL archive | [architecture 4](docs/architecture/04-storage-and-integrity.md) |
 | `qlure correlate [--top N] [--iocs FILE]` | Group events into sessions and actors and score them | [architecture 5](docs/architecture/05-correlation-and-verdicts.md) |

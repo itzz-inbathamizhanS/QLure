@@ -45,6 +45,20 @@ The sessions list also has the **PQC chart** (share of SSH sessions offering a p
 exchange, split by verdict). See [page 8](08-extras-pqc-and-ml.md). `/healthz` answers 503 when the
 store cannot be read; `/metrics` answers 503 in the same case.
 
+### Public metrics (`QLURE_METRICS_PUBLIC=1`)
+
+By default `/metrics` needs the admin login. With `QLURE_METRICS_PUBLIC=1` the guard in
+`dashboard/app.py` skips the login for `/metrics` only, so anyone who can reach the port can read
+it. The response holds counts and times only: event, session (by verdict), actor and honeytoken-hit
+totals, and the time of the last live pass. It has no IP addresses, payloads or secrets (see
+`metrics_text` in `dashboard/data.py`).
+
+- Keep `QLURE_METRICS_PUBLIC` unset unless the dashboard is bound to localhost or a trusted scrape
+  network.
+- **Never expose it to the internet.**
+- `/healthz` is public by design and needs no variable. It also holds only counts, times and the
+  version.
+
 ## Live feed
 
 With `QLURE_LIVE` unset or not `0`, the dashboard runs one correlation pass every

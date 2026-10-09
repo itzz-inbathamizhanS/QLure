@@ -36,7 +36,7 @@ docker logs -f qlure-live-forwarder-1
 docker compose -p qlure-live ps -a
 curl.exe -s http://127.0.0.1:9000/healthz
 ```
-*`/healthz` is public and returns JSON (`status`, `db`, event and session counts, `live`). Use `http://127.0.0.1:9100` for a native dashboard. `/metrics` needs a login unless `QLURE_METRICS_PUBLIC=1`.*
+*`/healthz` is public and returns JSON (`status`, `db`, event and session counts, `live`). Use `http://127.0.0.1:9100` for a native dashboard. `/metrics` needs a login unless `QLURE_METRICS_PUBLIC=1`, which makes it readable by anyone who can reach the port. Use it only on localhost or a trusted scrape network, never on the internet.*
 
 ---
 
@@ -110,6 +110,12 @@ python -m qlure.cli forward --logs logs --db data/qlure.db
 python -m qlure.cli correlate --db data/qlure.db
 ```
 *`forward` copies new JSONL lines into `events`. `correlate` rebuilds `sessions`, `actors` and `findings` (scores).*
+
+**Check log files against the event schema:**
+```powershell
+python -m qlure.cli validate logs\web.jsonl logs\api.jsonl
+```
+*Prints `valid/total` events and one line per bad event on stderr. Exits 1 if any line is invalid. List the files explicitly: PowerShell does not expand `*.jsonl` for this command.*
 
 **Check the hash chain:**
 ```powershell
