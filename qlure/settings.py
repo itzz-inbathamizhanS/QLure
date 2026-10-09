@@ -20,6 +20,8 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from qlure.store.chain import GENESIS, config_hash
+
 RULES_FILE = Path(__file__).resolve().parent / "rules" / "rules.yaml"
 
 DASHBOARD_PORT = 9000
@@ -176,17 +178,31 @@ def _forbidden(path: str) -> str | None:
 def _audit(
     conn: sqlite3.Connection, who: str, key: str, old: Any, new: Any, outcome: str, reason: str
 ) -> None:
+    last = conn.execute("SELECT hash FROM config_audit ORDER BY audit_id DESC LIMIT 1").fetchone()
+    prev = last["hash"] if last and last["hash"] else GENESIS
+    row = {
+        "ts": datetime.now(UTC).isoformat(),
+        "who": who,
+        "key": key,
+        "old_value": json.dumps(old),
+        "new_value": json.dumps(new),
+        "outcome": outcome,
+        "reason": reason,
+    }
     conn.execute(
-        "INSERT INTO config_audit (ts, who, key, old_value, new_value, outcome, reason)"
-        " VALUES (?,?,?,?,?,?,?)",
+        "INSERT INTO config_audit"
+        " (ts, who, key, old_value, new_value, outcome, reason, prev_hash, hash)"
+        " VALUES (?,?,?,?,?,?,?,?,?)",
         (
-            datetime.now(UTC).isoformat(),
-            who,
-            key,
-            json.dumps(old),
-            json.dumps(new),
-            outcome,
-            reason,
+            row["ts"],
+            row["who"],
+            row["key"],
+            row["old_value"],
+            row["new_value"],
+            row["outcome"],
+            row["reason"],
+            prev,
+            config_hash(prev, row),
         ),
     )
     conn.commit()

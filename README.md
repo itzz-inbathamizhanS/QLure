@@ -134,6 +134,11 @@ Open `http://127.0.0.1:9000` for the dashboard. Set the password with `QLURE_DAS
 before `docker compose up`; if you do not, a random one is printed in `docker compose logs dashboard`.
 The dashboard is not on the decoy network, reads the logs read-only and writes only `data/`.
 
+The `egress-watch` container shares the web decoy's network namespace and reads `/proc/net` only.
+It appends an alert to `data/egress.jsonl` whenever a decoy opens an outbound connection, which a
+decoy should never do. Alerts are not repeated while a connection stays open, but a watchdog
+restart re-reports connections that are still open. Check it with `qlure watch-egress --help`.
+
 Ports 3306 and 6379 must be free on your machine (stop a local MySQL or Redis first).
 
 Without Docker (Python 3.12), run any one decoy:

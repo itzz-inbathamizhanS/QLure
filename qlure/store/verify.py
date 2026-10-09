@@ -9,7 +9,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from qlure.events import Event
-from qlure.store.chain import GENESIS, canonical, link_hash
+from qlure.store.chain import GENESIS, canonical, config_hash, link_hash
 
 
 @dataclass(frozen=True)
@@ -59,3 +59,48 @@ def verify(conn: sqlite3.Connection, log_dir: Path) -> tuple[int, Problem | None
         prev = row["hash"]
         checked += 1
     return checked, None
+
+
+@dataclass(frozen=True)
+class ConfigProblem:
+    audit_id: int
+    reason: str
+
+
+def verify_config(conn: sqlite3.Connection) -> tuple[int, int, ConfigProblem | None]:
+    """Walk config_audit in order. Returns (chained rows checked, legacy rows, first problem).
+
+    Rows written before chaining (empty hash) may only come first. Editing a row, or removing
+    a row from the middle, breaks the chain at that point. Removing the newest row cannot be
+    seen from the chain alone; signed checkpoints are the place to pin the head.
+    """
+    prev = GENESIS
+    chained = False
+    checked = 0
+    legacy = 0
+    for row in conn.execute("SELECT * FROM config_audit ORDER BY audit_id"):
+        if not row["hash"]:
+            if chained:
+                return (
+                    checked,
+                    legacy,
+                    ConfigProblem(row["audit_id"], "unchained row after chained rows"),
+                )
+            legacy += 1
+            continue
+        chained = True
+        if row["prev_hash"] != prev:
+            return (
+                checked,
+                legacy,
+                ConfigProblem(row["audit_id"], "chain link broken: an earlier change was removed"),
+            )
+        if config_hash(prev, dict(row)) != row["hash"]:
+            return (
+                checked,
+                legacy,
+                ConfigProblem(row["audit_id"], "row was edited after it was written"),
+            )
+        prev = row["hash"]
+        checked += 1
+    return checked, legacy, None

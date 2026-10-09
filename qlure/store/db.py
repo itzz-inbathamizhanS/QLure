@@ -50,7 +50,8 @@ CREATE TABLE IF NOT EXISTS honeytokens (
 CREATE TABLE IF NOT EXISTS config_audit (
     audit_id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, who TEXT NOT NULL,
     key TEXT NOT NULL, old_value TEXT, new_value TEXT,
-    outcome TEXT NOT NULL DEFAULT 'applied', reason TEXT NOT NULL DEFAULT ''
+    outcome TEXT NOT NULL DEFAULT 'applied', reason TEXT NOT NULL DEFAULT '',
+    prev_hash TEXT NOT NULL DEFAULT '', hash TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS checkpoints (
     upto_seq INTEGER PRIMARY KEY, head_hash TEXT NOT NULL, ts TEXT NOT NULL,
@@ -87,6 +88,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if audit and "outcome" not in audit:
         conn.execute("ALTER TABLE config_audit ADD COLUMN outcome TEXT NOT NULL DEFAULT 'applied'")
         conn.execute("ALTER TABLE config_audit ADD COLUMN reason TEXT NOT NULL DEFAULT ''")
+    if audit and "hash" not in audit:
+        # Rows written before chaining keep an empty hash and are reported as legacy.
+        conn.execute("ALTER TABLE config_audit ADD COLUMN prev_hash TEXT NOT NULL DEFAULT ''")
+        conn.execute("ALTER TABLE config_audit ADD COLUMN hash TEXT NOT NULL DEFAULT ''")
     findings = [row["name"] for row in conn.execute("PRAGMA table_info(findings)")]
     if findings and "ml_score" not in findings:
         conn.execute("ALTER TABLE findings ADD COLUMN ml_score REAL")

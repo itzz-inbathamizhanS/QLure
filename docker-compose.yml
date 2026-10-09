@@ -100,6 +100,20 @@ services:
     cpus: 0.5
     pids_limit: 64
 
+  # Watchdog: joins the web decoy's network namespace, reads /proc/net only, and alerts on any
+  # connection the decoy opens itself. Writes to data/, which the forwarder never reads.
+  egress-watch:
+    <<: *decoy
+    command: >
+      qlure watch-egress --proc-net /proc/net --out /var/lib/qlure/egress.jsonl --interval 5
+    network_mode: "service:web"
+    depends_on: [web]
+    volumes:
+      - ./data:/var/lib/qlure
+    mem_limit: 64m
+    cpus: 0.1
+    pids_limit: 32
+
   forwarder:
     <<: *decoy
     command: qlure forward --follow --logs /var/log/qlure --db /var/lib/qlure/qlure.db
