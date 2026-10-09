@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>phpMyAdmin</title>
+<style>
+  body { margin: 0; font-family: sans-serif; background: #f2f2f2; color: #333; }
+  #header { background: #e9ecef; border-bottom: 1px solid #ccc; padding: 10px 16px; font-size: 18px; }
+  #container { max-width: 380px; margin: 60px auto; background: #fff; border: 1px solid #ccc;
+               padding: 20px 24px; }
+  h2 { font-size: 16px; margin: 0 0 14px; font-weight: normal; }
+  label { display: block; font-size: 13px; margin: 10px 0 4px; }
+  input[type=text], input[type=password], select { width: 100%; box-sizing: border-box;
+               padding: 6px; border: 1px solid #aaa; }
+  input[type=submit] { margin-top: 16px; padding: 6px 18px; background: #e3e3e3;
+               border: 1px solid #999; cursor: pointer; }
+  .error { color: #b00; font-size: 13px; margin-top: 10px; display: none; }
+  #footer { text-align: center; font-size: 11px; color: #777; margin-top: 30px; }
+</style>
+</head>
+<body>
+<div id="header">phpMyAdmin</div>
+<div id="container">
+  <h2>Welcome to phpMyAdmin</h2>
+  <form method="post" action="/phpmyadmin/index.php" autocomplete="off">
+    <input type="hidden" name="set_session" value="">
+    <label for="input_servername">Server choice:</label>
+    <select id="input_servername" name="server">
+      <option value="1" selected>db.veltrix.internal:3306</option>
+    </select>
+    <label for="input_username">Username:</label>
+    <input type="text" id="input_username" name="pma_username" maxlength="256" value="">
+    <label for="input_password">Password:</label>
+    <input type="password" id="input_password" name="pma_password" maxlength="256">
+    <input type="submit" value="Go">
+  </form>
+  <div class="error" id="login_error">Access denied for user</div>
+</div>
+<div id="footer">phpMyAdmin 5.2.1 &middot; nginx/1.24.0</div>
+</body>
+</html>

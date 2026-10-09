@@ -25,3 +25,26 @@ honeytokens:
     value: qlk_decoy_7f3a9c21e5d84b0a
     planted_in: ssh ~/.bash_history
     accepted_by: api          # sent as X-API-Key
+  - id: ht-git-001
+    kind: git_token
+    value: ghp_DECOYqlure0000000000000000000000000001
+    planted_in: web /.git/config   # inside the remote URL as deploy:<token>@
+    accepted_by: none         # planted only; no decoy checks it yet
+  - id: ht-sshkey-001
+    kind: ssh_private_key
+    value: |
+      -----BEGIN DECOY PRIVATE KEY-----
+      DECOY-NOT-A-KEY-DECOY-NOT-A-KEY-DECOY-NOT-A-KEY-DECOY-NOT-A-KEY
+      -----END DECOY PRIVATE KEY-----
+    planted_in: ssh ~/.ssh/id_rsa
+    accepted_by: none         # planted only; the body is a placeholder, not key material
+  - id: ht-redis-001
+    kind: redis_password
+    value: Redis-Decoy-2026
+    planted_in: ssh app/config.yaml
+    accepted_by: redis        # matched on AUTH by the Redis banner decoy
+  - id: ht-canary-001
+    kind: canary_url
+    value: https://canary.decoy.example/t/ht-canary-001
+    planted_in: ssh app/backup.sh
+    accepted_by: none         # a fetch of this URL is the alert; nothing is ever sent

@@ -1,0 +1,7 @@
+User-agent: *
+Disallow: /admin
+Disallow: /backup/
+Disallow: /phpmyadmin/
+Disallow: /server-status
+Disallow: /upload
+Disallow: /.git/

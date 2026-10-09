@@ -1,5 +1,7 @@
 # Fake file tree behind the SSH decoy. Plain text only; nothing here is ever executed.
 # {{ht-api-001}} is replaced at load time with the planted API key from honeytokens.yaml.
+# The other planted values below are written in literally; tests/decoys/test_phase1_content.py
+# checks that each one matches its entry in honeytokens.yaml.
 hostname: veltrix-app-01
 files:
   /etc/hostname: "veltrix-app-01\n"
@@ -46,3 +48,117 @@ files:
     curl -s -H "X-API-Key: {{ht-api-001}}" http://api.veltrix.internal:8081/api/v1/users | head
     sudo systemctl restart dispatch
     history
+  /home/deploy/.ssh/authorized_keys: |
+    ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDecoyFakeDeployKeyNotReal0000000000000000 deploy@release-host
+    ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDecoyFakeReleaseKeyNotReal0000000000000000 ci@release-host
+  /home/deploy/.ssh/known_hosts: |
+    git.example.internal ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDecoyFakeGitHostKeyNotReal000000000
+    10.20.0.1 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDecoyFakeGatewayKeyNotReal0000000000000000
+  /home/deploy/.ssh/id_rsa: |
+    -----BEGIN DECOY PRIVATE KEY-----
+    DECOY-NOT-A-KEY-DECOY-NOT-A-KEY-DECOY-NOT-A-KEY-DECOY-NOT-A-KEY
+    -----END DECOY PRIVATE KEY-----
+  /home/deploy/app/backup.sh: |
+    #!/bin/bash
+    # Nightly backup for veltrix-dispatch. Cron runs this at 02:00 as deploy.
+    set -euo pipefail
+
+    BACKUP_DIR=/home/deploy/backups
+    STAMP=$(date +%Y%m%d)
+    DB_HOST=db.veltrix.internal
+    DB_NAME=dispatch
+    DB_USER=dispatch_app
+    REPORT_URL=https://canary.decoy.example/t/ht-canary-001
+
+    mkdir -p "$BACKUP_DIR"
+    export MYSQL_PWD="Db!Decoy-7731"
+    mysqldump -h "$DB_HOST" -u "$DB_USER" "$DB_NAME" | gzip > "$BACKUP_DIR/dispatch-$STAMP.sql.gz"
+    curl -fsS "$REPORT_URL?status=ok" > /dev/null
+    find "$BACKUP_DIR" -name 'dispatch-*.sql.gz' -mtime +14 -delete
+  /home/deploy/app/config.yaml: |
+    # veltrix-dispatch settings. Read at start-up; do not commit real values.
+    service:
+      name: veltrix-dispatch
+      listen: 0.0.0.0:8081
+    database:
+      host: db.veltrix.internal
+      port: 3306
+      name: dispatch
+      user: dispatch_app
+      password: "Db!Decoy-7731"
+    redis:
+      host: cache.veltrix.internal
+      port: 6379
+      db: 0
+      password: "Redis-Decoy-2026"
+  /var/log/auth.log: |
+    Oct  8 18:19:02 veltrix-app-01 sshd[1388]: Invalid user admin from 198.51.100.23 port 40122
+    Oct  8 18:19:04 veltrix-app-01 sshd[1388]: Failed password for invalid user admin from 198.51.100.23 port 40122 ssh2
+    Oct  8 18:19:09 veltrix-app-01 sshd[1390]: Connection closed by invalid user admin 198.51.100.23 port 40122 [preauth]
+    Oct  8 18:22:38 veltrix-app-01 sshd[1412]: Accepted publickey for deploy from 10.20.0.5 port 51108 ssh2: ED25519 SHA256:DecoyFakeFingerprint0000000000000000000000
+    Oct  8 18:22:41 veltrix-app-01 sshd[1421]: Accepted password for deploy from 10.20.0.5 port 51114 ssh2
+    Oct  8 18:22:41 veltrix-app-01 sshd[1421]: pam_unix(sshd:session): session opened for user deploy(uid=1001) by (uid=0)
+    Oct  8 18:30:01 veltrix-app-01 CRON[1466]: pam_unix(cron:session): session opened for user deploy(uid=1001) by (uid=0)
+    Oct  8 18:30:01 veltrix-app-01 CRON[1467]: (deploy) CMD (/home/deploy/app/backup.sh)
+    Oct  8 18:30:02 veltrix-app-01 CRON[1466]: pam_unix(cron:session): session closed for user deploy
+  /proc/cpuinfo: |
+    processor	: 0
+    vendor_id	: GenuineIntel
+    cpu family	: 6
+    model		: 63
+    model name	: Intel(R) Xeon(R) CPU E5-2676 v3 @ 2.40GHz
+    stepping	: 2
+    cpu MHz		: 2399.998
+    cache size	: 30720 KB
+    physical id	: 0
+    siblings	: 4
+    core id		: 0
+    cpu cores	: 4
+    fpu		: yes
+    flags		: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology cpuid pni pclmulqdq ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm abm cpuid_fault invpcid_single pti ssbd ibrs ibpb stibp fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid xsaveopt
+    bogomips	: 4799.99
+    processor	: 1
+    vendor_id	: GenuineIntel
+    cpu family	: 6
+    model		: 63
+    model name	: Intel(R) Xeon(R) CPU E5-2676 v3 @ 2.40GHz
+    stepping	: 2
+    cpu MHz		: 2399.998
+    cache size	: 30720 KB
+    physical id	: 0
+    siblings	: 4
+    core id		: 1
+    cpu cores	: 4
+    fpu		: yes
+    flags		: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology cpuid pni pclmulqdq ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm abm cpuid_fault invpcid_single pti ssbd ibrs ibpb stibp fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid xsaveopt
+    bogomips	: 4799.99
+    processor	: 2
+    vendor_id	: GenuineIntel
+    cpu family	: 6
+    model		: 63
+    model name	: Intel(R) Xeon(R) CPU E5-2676 v3 @ 2.40GHz
+    stepping	: 2
+    cpu MHz		: 2399.998
+    cache size	: 30720 KB
+    physical id	: 0
+    siblings	: 4
+    core id		: 2
+    cpu cores	: 4
+    fpu		: yes
+    flags		: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology cpuid pni pclmulqdq ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm abm cpuid_fault invpcid_single pti ssbd ibrs ibpb stibp fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid xsaveopt
+    bogomips	: 4799.99
+    processor	: 3
+    vendor_id	: GenuineIntel
+    cpu family	: 6
+    model		: 63
+    model name	: Intel(R) Xeon(R) CPU E5-2676 v3 @ 2.40GHz
+    stepping	: 2
+    cpu MHz		: 2399.998
+    cache size	: 30720 KB
+    physical id	: 0
+    siblings	: 4
+    core id		: 3
+    cpu cores	: 4
+    fpu		: yes
+    flags		: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology cpuid pni pclmulqdq ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm abm cpuid_fault invpcid_single pti ssbd ibrs ibpb stibp fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid xsaveopt
+    bogomips	: 4799.99
