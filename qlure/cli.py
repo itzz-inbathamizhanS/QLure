@@ -12,6 +12,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from qlure.correlate import store as correlate_store
 from qlure.events import Event, json_schema
 from qlure.store import db, forwarder
 from qlure.store.verify import verify
@@ -75,6 +76,16 @@ def _verify(args: argparse.Namespace) -> int:
     return 1
 
 
+def _correlate(args: argparse.Namespace) -> int:
+    result = correlate_store.run(db.connect(args.db))
+    print(f"{len(result.sessions)} sessions, {len(result.actors)} actors")
+    for f in result.findings[: args.top]:
+        rules = ",".join(sorted({h.rule_id for h in f.hits}, key=lambda r: int(r[1:]))) or "-"
+        where = f"{f.session.service:<6} {f.session.src_ip:<15}"
+        print(f"{f.verdict:<10} {f.score:>3}  {f.actor_id}  {where} {rules}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="qlure")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -87,6 +98,11 @@ def main(argv: list[str] | None = None) -> int:
     p_validate = sub.add_parser("validate", help="check JSONL event files against the schema")
     p_validate.add_argument("files", type=Path, nargs="+")
     p_validate.set_defaults(func=_validate)
+
+    p_corr = sub.add_parser("correlate", help="group stored events into sessions and score them")
+    p_corr.add_argument("--db", type=Path, default=DEFAULT_DB)
+    p_corr.add_argument("--top", type=int, default=20, help="how many findings to print")
+    p_corr.set_defaults(func=_correlate)
 
     for name, func, help_text in (
         ("forward", _forward, "copy new JSONL events into the store"),
