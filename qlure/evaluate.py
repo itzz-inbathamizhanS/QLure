@@ -35,6 +35,10 @@ TARGETS = {
 }
 
 
+class MissingCaptureData(FileNotFoundError):
+    """A run folder has run.json but no events.jsonl (raw captures are not committed)."""
+
+
 @dataclass
 class Run:
     path: Path
@@ -47,9 +51,16 @@ def load_runs(root: Path) -> list[Run]:
     runs = []
     for meta_path in sorted(root.rglob("run.json")):
         folder = meta_path.parent
+        events_path = folder / "events.jsonl"
+        if not events_path.exists():
+            raise MissingCaptureData(
+                f"capture data missing: {events_path} not found. Raw captures are gitignored and "
+                "not in the clone; record them with `qlure capture start` / `qlure capture stop` "
+                "(see README, 'Capture, replay and evaluate')."
+            )
         events = [
             Event.model_validate_json(line)
-            for line in (folder / "events.jsonl").read_text(encoding="utf-8").splitlines()
+            for line in events_path.read_text(encoding="utf-8").splitlines()
             if line.strip()
         ]
         labels_path = folder / "labels.json"

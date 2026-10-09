@@ -236,7 +236,11 @@ def _eval(args: argparse.Namespace) -> int:
     if args.model and model is None:
         print(f"eval: no usable model at {args.model}", file=sys.stderr)
         return 1
-    report = evaluation.evaluate(args.folder, model)
+    try:
+        report = evaluation.evaluate(args.folder, model)
+    except evaluation.MissingCaptureData as exc:
+        print(f"eval: {exc}", file=sys.stderr)
+        return 1
     print(evaluation.render(report))
     if args.json:
         args.json.write_text(json.dumps(report, indent=2), encoding="utf-8")

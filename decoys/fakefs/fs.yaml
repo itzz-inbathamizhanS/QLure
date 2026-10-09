@@ -7,7 +7,30 @@ files:
     PRETTY_NAME="Ubuntu 22.04.4 LTS"
     NAME="Ubuntu"
     VERSION_ID="22.04"
+    VERSION="22.04.4 LTS (Jammy Jellyfish)"
     ID=ubuntu
+    ID_LIKE=debian
+    VERSION_CODENAME=jammy
+  /etc/passwd: |
+    root:x:0:0:root:/root:/bin/bash
+    daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+    bin:x:2:2:bin:/bin:/usr/sbin/nologin
+    sys:x:3:3:sys:/dev:/usr/sbin/nologin
+    sync:x:4:65534:sync:/bin:/bin/sync
+    man:x:6:12:man:/var/cache/man:/usr/sbin/nologin
+    www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin
+    nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
+    systemd-network:x:100:102:systemd Network Management,,,:/run/systemd:/usr/sbin/nologin
+    sshd:x:105:65534::/run/sshd:/usr/sbin/nologin
+    deploy:x:1001:1001:Deploy,,,:/home/deploy:/bin/bash
+  /etc/group: |
+    root:x:0:
+    daemon:x:1:
+    adm:x:4:
+    sudo:x:27:
+    www-data:x:33:
+    nogroup:x:65534:
+    deploy:x:1001:
   /home/deploy/notes.txt: |
     Deploy checklist
     - rotate the dispatch API key after the August migration

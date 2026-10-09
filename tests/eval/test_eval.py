@@ -221,3 +221,14 @@ def test_replay_needs_a_token_and_a_known_format(tmp_path):
     bad.write_text("x")
     with pytest.raises(replay.ReplayError):
         replay.load(bad)
+
+
+def test_eval_reports_missing_capture_data_without_a_traceback(tmp_path, capsys):
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    (run_dir / "run.json").write_text("{}", encoding="utf-8")
+    assert main(["eval", str(tmp_path)]) == 1
+    err = capsys.readouterr().err
+    assert err.startswith("eval: capture data missing")
+    assert "qlure capture" in err
+    assert "Traceback" not in err
