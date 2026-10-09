@@ -452,3 +452,41 @@ details.raw pre { margin-top: 8px; font: 11.5px/1.5 var(--mono); white-space: pr
 .stage-name { font-weight: 650; color: var(--text); }
 .stage-state { font-size: 12.5px; color: var(--text-2); font-weight: 600; }
 .stage-time { font-size: 12px; color: var(--muted); }
+
+/* ---------- live overview ---------- */
+.live-status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 10px; color: var(--text-2); }
+.live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 3px var(--good-soft); }
+
+/* ---------- ATT&CK matrix ---------- */
+.matrix-scroll { overflow-x: auto; }
+.matrix { display: grid; gap: 8px; grid-template-columns: repeat(12, minmax(118px, 1fr)); min-width: 0; }
+.tactic { min-width: 0; padding: 8px; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.tactic-name { margin: 0 0 8px; font: 650 11.5px/1.3 var(--sans); text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
+.tactic-cells { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.tactic-cells li { min-width: 0; }
+.cell { display: grid; gap: 3px; padding: 7px 8px; border: 1px solid var(--line-2); border-radius: var(--radius-sm);
+  background: var(--panel); color: var(--text); font-size: 12px; line-height: 1.35; text-decoration: none; overflow-wrap: anywhere; }
+.cell-id { font-size: 11.5px; font-weight: 600; color: var(--text); }
+.cell-name { color: var(--text-2); }
+.cell-count { font-size: 11px; color: var(--muted); }
+a.cell.seen { border-left: 4px solid var(--accent); }
+a.cell.seen:hover { border-color: var(--accent); }
+a.cell.seen:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cell.unseen { border-style: dashed; background: transparent; opacity: .6; }
+.cell.unseen .cell-count { font-style: italic; }
+.other-techniques { margin-top: 14px; }
+.other-techniques ul { margin: 6px 0 0; padding: 0; }
+@media (max-width: 860px) {
+  .matrix { grid-template-columns: minmax(0, 1fr); }
+  .matrix-scroll { overflow-x: visible; }
+}
+
+/* ---------- SSH terminal replay ---------- */
+.terminal { max-height: 70vh; overflow: auto; padding: 12px 14px; background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: var(--radius-sm); font: 12.5px/1.55 var(--mono); color: var(--text-2); }
+.term-step + .term-step { margin-top: 12px; }
+.term-line { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
+.term-prompt { font-weight: 650; color: var(--text); }
+.term-out { margin: 4px 0 0; padding: 0 0 0 12px; border-left: 2px solid var(--line-2); font: inherit; white-space: pre-wrap;
+  overflow-wrap: anywhere; color: var(--text-2); }
+.term-note { margin: 4px 0 0 14px; font: 11.5px/1.4 var(--sans); color: var(--warn); }

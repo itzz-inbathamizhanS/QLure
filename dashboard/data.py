@@ -24,6 +24,54 @@ _LOGIN_WHERE = {
     "api": "to the API",
 }
 _DOWNLOAD = re.compile(r"\b(?:wget|curl|tftp|scp)\b")
+TERMINAL_SHOWN_CHARS = 2048  # the longest output the SSH replay prints; the decoy stores up to this
+OLD_PREVIEW_CHARS = 256  # the decoy's earlier output cap; a preview this long was likely cut
+TERMINAL_HOST = "srv"  # events do not record the decoy's hostname, so the replay uses a fixed label
+DEFAULT_SHELL_USER = "deploy"  # the decoy's shell user when the visitor logged in without a name
+
+# ATT&CK tactic columns of the matrix page, in order.
+ATTACK_TACTICS = (
+    "Reconnaissance",
+    "Initial Access",
+    "Execution",
+    "Persistence",
+    "Privilege Escalation",
+    "Credential Access",
+    "Discovery",
+    "Lateral Movement",
+    "Collection",
+    "Exfiltration",
+    "Command and Control",
+    "Impact",
+)
+# Every technique id the rules can emit (rules.yaml attack lists and technique_map), with the one
+# tactic column it is shown under and its ATT&CK name. tests/dashboard/test_attack_matrix.py checks
+# this table against rules.yaml, so a new rule id cannot go unmapped.
+ATTACK_TECHNIQUES: dict[str, tuple[str, str]] = {
+    "T1595.002": ("Reconnaissance", "Vulnerability Scanning"),
+    "T1595.003": ("Reconnaissance", "Wordlist Scanning"),
+    "T1190": ("Initial Access", "Exploit Public-Facing Application"),
+    "T1078.001": ("Initial Access", "Default Accounts"),
+    "T1059": ("Execution", "Command and Scripting Interpreter"),
+    "T1059.004": ("Execution", "Unix Shell"),
+    "T1610": ("Execution", "Deploy Container"),
+    "T1505.003": ("Persistence", "Web Shell"),
+    "T1098.004": ("Persistence", "SSH Authorized Keys"),
+    "T1053.003": ("Persistence", "Cron"),
+    "T1548.003": ("Privilege Escalation", "Sudo and Sudo Caching"),
+    "T1611": ("Privilege Escalation", "Escape to Host"),
+    "T1110.001": ("Credential Access", "Password Guessing"),
+    "T1552.001": ("Credential Access", "Credentials In Files"),
+    "T1046": ("Discovery", "Network Service Discovery"),
+    "T1082": ("Discovery", "System Information Discovery"),
+    "T1033": ("Discovery", "System Owner/User Discovery"),
+    "T1021.004": ("Lateral Movement", "Remote Services: SSH"),
+    "T1005": ("Collection", "Data from Local System"),
+    "T1048": ("Exfiltration", "Exfiltration Over Alternative Protocol"),
+    "T1105": ("Command and Control", "Ingress Tool Transfer"),
+    "T1496": ("Impact", "Resource Hijacking"),
+    "T1485": ("Impact", "Data Destruction"),
+}
 
 
 def _loads(text: str | None, default: Any) -> Any:
@@ -225,6 +273,7 @@ def session_detail(conn: sqlite3.Connection, session_id: str) -> dict[str, Any] 
         "ml_factors": ml_factors(row["ml_why"]),
         "segments": score_segments(hits),
         "story": session_story([e["event"] for e in events], hits),
+        "terminal": terminal_replay([e["event"] for e in events]),
         "honeytokens": sorted(
             {e["event"].honeytoken_id for e in events if e["event"].honeytoken_id}
         ),
@@ -599,4 +648,90 @@ def actor_detail(conn: sqlite3.Connection, actor_id: str) -> dict[str, Any] | No
             }
             for k, v in sorted(by_service.items(), key=lambda kv: -kv[1])
         ],
+    }
+
+
+def terminal_replay(events: list[Event]) -> list[dict[str, Any]]:
+    """The command events of a session, in order, as a prompt and output transcript.
+
+    Output is the decoy's own preview text, shown as stored. Long output is cut for display and
+    the cut is named in `note`; the template escapes everything, so nothing here is markup.
+    """
+    ordered = sorted(events, key=_moment)
+    user = next(
+        (
+            e.credential.username
+            for e in ordered
+            if e.action.value == "login_success" and e.credential and e.credential.username
+        ),
+        DEFAULT_SHELL_USER,
+    )
+    steps: list[dict[str, Any]] = []
+    for e in ordered:
+        if e.action.value != "command":
+            continue
+        command = str((e.request or {}).get("command") or "")
+        raw = str((e.response or {}).get("output_preview") or "")
+        note = ""
+        if len(raw) > TERMINAL_SHOWN_CHARS:
+            note = f"output cut for display: {TERMINAL_SHOWN_CHARS} of {len(raw)} characters shown"
+        elif len(raw) == OLD_PREVIEW_CHARS:
+            note = f"the decoy keeps at most {OLD_PREVIEW_CHARS} characters; more may be missing"
+        steps.append(
+            {
+                "prompt": f"{user}@{TERMINAL_HOST}:~$",
+                "command": command,
+                "output": raw[:TERMINAL_SHOWN_CHARS].rstrip("\n"),
+                "note": note,
+            }
+        )
+    return steps
+
+
+def attack_matrix(conn: sqlite3.Connection) -> dict[str, Any]:
+    """Each mapped technique with its rule-hit count, session count and first session.
+
+    The first session is the highest-scoring one that shows the technique (the same order as the
+    sessions list), so a seen cell links to the session that matters most.
+    """
+    hit_count: dict[str, int] = {}
+    sessions: dict[str, set[str]] = {}
+    first: dict[str, tuple[tuple[int, str], str]] = {}
+    for row in conn.execute(
+        "SELECT f.session_id, f.score, f.hits, s.first_seen FROM findings f"
+        " JOIN sessions s ON s.session_id = f.session_id"
+    ):
+        order = (-row["score"], row["first_seen"])
+        for hit in _loads(row["hits"], []):
+            for technique in dict.fromkeys(hit["attack"]):
+                hit_count[technique] = hit_count.get(technique, 0) + 1
+                sessions.setdefault(technique, set()).add(row["session_id"])
+                best = first.get(technique)
+                if best is None or order < best[0]:
+                    first[technique] = (order, row["session_id"])
+
+    def cell(tid: str, name: str | None) -> dict[str, Any]:
+        return {
+            "id": tid,
+            "name": name,
+            "hits": hit_count.get(tid, 0),
+            "sessions": len(sessions.get(tid, ())),
+            "first_session": first[tid][1] if tid in first else None,
+        }
+
+    columns = [
+        {
+            "tactic": tactic,
+            "cells": [
+                cell(tid, name) for tid, (t, name) in ATTACK_TECHNIQUES.items() if t == tactic
+            ],
+        }
+        for tactic in ATTACK_TACTICS
+    ]
+    return {
+        "columns": columns,
+        "seen": sum(1 for tid in ATTACK_TECHNIQUES if tid in hit_count),
+        "total": len(ATTACK_TECHNIQUES),
+        # Seen in the store but not in the table: listed so nothing the rules emit is hidden.
+        "other": [cell(tid, None) for tid in sorted(hit_count) if tid not in ATTACK_TECHNIQUES],
     }

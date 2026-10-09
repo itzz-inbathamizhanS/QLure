@@ -77,12 +77,9 @@
       </select></label>
     <noscript><button type="submit">Filter</button></noscript>
   </form>
-  <div id="results">
-  {% if stats.sessions %}
+  {# With live on, this list asks for its own rows every few seconds; the server reads the filters from the browser's URL. #}
+  <div id="results"{% if live.enabled %} hx-get="/?live=1" hx-trigger="every {{ live.poll }}s" hx-swap="innerHTML"{% endif %}>
   {% include "_results.html" %}
-  {% else %}
-  <div class="empty">No data yet. Run python tools/seed_demo.py --db data/demo.db to load sample data, or start the decoys (see docs/DEMO.md).</div>
-  {% endif %}
   </div>
 </section>
 </div>

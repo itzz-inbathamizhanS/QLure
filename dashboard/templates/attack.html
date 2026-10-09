@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Q-Lure ATT&amp;CK matrix{% endblock %}
+{% block topbar %}
+  <div><h1>ATT&amp;CK matrix</h1>
+  <p class="muted small">{{ matrix.seen }} of {{ matrix.total }} mapped techniques seen in this store. Counts are rule hits and the sessions they came from.</p></div>
+{% endblock %}
+{% block content %}
+<section class="panel" aria-labelledby="matrix-h">
+  <div class="panel-head"><h2 id="matrix-h">Techniques by tactic</h2><span class="hint">a seen technique links to its highest-scoring session; an unseen one is dimmed and says so</span></div>
+  <div class="panel-body">
+    <div class="matrix-scroll">
+    <div class="matrix">
+    {% for col in matrix.columns %}
+      <section class="tactic" aria-labelledby="tactic-{{ loop.index }}">
+        <h3 id="tactic-{{ loop.index }}" class="tactic-name">{{ col.tactic }}</h3>
+        <ul class="tactic-cells">
+        {% for c in col.cells %}
+          <li>
+          {% if c.hits %}
+            <a class="cell seen" href="/session/{{ c.first_session }}">
+              <span class="cell-id mono">{{ c.id }}</span>
+              <span class="cell-name">{{ c.name }}</span>
+              <span class="cell-count">seen: {{ c.hits }} hit{{ 's' if c.hits != 1 }}, {{ c.sessions }} session{{ 's' if c.sessions != 1 }}</span>
+            </a>
+          {% else %}
+            <div class="cell unseen">
+              <span class="cell-id mono">{{ c.id }}</span>
+              <span class="cell-name">{{ c.name }}</span>
+              <span class="cell-count">not seen</span>
+            </div>
+          {% endif %}
+          </li>
+        {% endfor %}
+        </ul>
+      </section>
+    {% endfor %}
+    </div>
+    </div>
+    {% if matrix.other %}
+    <div class="other-techniques">
+      <h3 class="small muted">Seen, but not in the matrix table</h3>
+      <ul class="chips">
+      {% for c in matrix.other %}<li class="chip mono">{{ c.id }}: {{ c.hits }} hit{{ 's' if c.hits != 1 }}, {{ c.sessions }} session{{ 's' if c.sessions != 1 }}</li>{% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

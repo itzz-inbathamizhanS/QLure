@@ -55,6 +55,25 @@
   {% endif %}
 </section>
 
+{% if s.service == 'ssh' %}
+<section class="panel" aria-labelledby="term-h">
+  <div class="panel-head"><h2 id="term-h">Terminal replay</h2><span class="hint">the commands in order, with the decoy's own replies; the prompt is a label</span></div>
+  <div class="panel-body">
+    <div class="terminal">
+    {% for t in s.terminal %}
+      <div class="term-step">
+        <div class="term-line"><span class="term-prompt">{{ t.prompt }}</span> <span class="term-cmd">{{ t.command }}</span></div>
+        {% if t.output %}<pre class="term-out">{{ t.output }}</pre>{% endif %}
+        {% if t.note %}<p class="term-note">[{{ t.note }}]</p>{% endif %}
+      </div>
+    {% else %}
+      <p class="muted small">No commands ran in this session.</p>
+    {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
 <div class="grid-main">
 <div class="stack">
   <section class="panel" aria-labelledby="why-h">

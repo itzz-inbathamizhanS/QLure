@@ -6,14 +6,18 @@ Every page carries a strict Content Security Policy with no inline script or sty
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import os
 import sqlite3
-from contextlib import closing
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, closing, suppress
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode, urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -46,6 +50,10 @@ CLEARED_TABLES = (
 )
 PAGE = 100
 MAX_REPORT_BYTES = 2_000_000
+LIVE_DEFAULT_SECONDS = 10  # QLURE_LIVE_INTERVAL: how often the background correlation runs
+LIVE_MIN_SECONDS = 2
+LIVE_POLL_SECONDS = 5  # how often an open overview asks for its rows (a cheap read)
+log = logging.getLogger(__name__)
 
 
 def _when(value: str | None) -> str:
@@ -79,6 +87,66 @@ def _coerce(key: str, value: str) -> Any:
     return value
 
 
+def live_interval() -> int | None:
+    """Seconds between background correlation passes, or None when QLURE_LIVE=0 turns them off."""
+    if os.environ.get("QLURE_LIVE", "1").strip() == "0":
+        return None
+    try:
+        seconds = int(os.environ.get("QLURE_LIVE_INTERVAL", LIVE_DEFAULT_SECONDS))
+    except ValueError:
+        seconds = LIVE_DEFAULT_SECONDS
+    return max(seconds, LIVE_MIN_SECONDS)
+
+
+@dataclass
+class LiveFeed:
+    """What the live overview shows: the interval, when a pass last finished, and whether the
+    last pass failed. `lock` is held by every correlation pass, so two never overlap."""
+
+    interval: int | None
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    updated: datetime | None = None
+    failed: bool = False
+    task: asyncio.Task[None] | None = None
+
+
+def correlate_db(db_file: Path) -> None:
+    """One correlation pass over the store: the work the Re-run button does."""
+    c = db.connect(db_file)
+    try:
+        correlate_store.run(c)
+    finally:
+        c.close()
+
+
+async def live_tick(db_file: Path, feed: LiveFeed) -> bool:
+    """One background pass. Returns False when it was skipped: a pass is already running, or
+    judge mode is on (a pass writes to the store, and judge mode is read-only)."""
+    if feed.lock.locked() or cfg.load_settings()["judge_mode"]:
+        return False
+    async with feed.lock:
+        await run_in_threadpool(correlate_db, db_file)
+    feed.updated = datetime.now(UTC)
+    feed.failed = False
+    return True
+
+
+async def live_loop(db_file: Path, feed: LiveFeed, interval: int) -> None:
+    """Run a pass every `interval` seconds until cancelled. A failed pass is logged, not raised."""
+    while True:
+        try:
+            await live_tick(db_file, feed)
+        except Exception:
+            feed.failed = True
+            log.exception("live correlation pass failed; the loop carries on")
+        await asyncio.sleep(interval)
+
+
+def _shown_query(request: Request) -> dict[str, str]:
+    """The query string of the page the browser shows, which htmx sends as HX-Current-URL."""
+    return dict(parse_qsl(urlparse(request.headers.get("hx-current-url", "")).query))
+
+
 def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> FastAPI:
     db_file = db_path or Path(os.environ.get("QLURE_DB", "data/qlure.db"))
     logs = logs_dir or Path(os.environ.get("QLURE_LOGS", "logs"))
@@ -88,12 +156,35 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
     templates = Jinja2Templates(directory=HERE / "templates")
     templates.env.filters["when"] = _when
     templates.env.globals["span"] = _span
-    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    feed = LiveFeed(interval=live_interval())
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        if feed.interval is not None:
+            feed.task = asyncio.create_task(live_loop(db_file, feed, feed.interval))
+        try:
+            yield
+        finally:
+            if feed.task is not None:
+                feed.task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await feed.task
+
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     app.state.auth = auth
+    app.state.live = feed
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 
     def conn() -> sqlite3.Connection:
         return db.connect(db_file)
+
+    def live_view() -> dict[str, Any]:
+        return {
+            "enabled": feed.interval is not None,
+            "poll": LIVE_POLL_SECONDS,
+            "updated": feed.updated.isoformat() if feed.updated else None,
+            "failed": feed.failed,
+        }
 
     def page(request: Request, name: str, status: int = 200, **context: Any) -> Response:
         context.setdefault("judge_mode", cfg.load_settings()["judge_mode"])
@@ -148,8 +239,12 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
 
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request) -> Response:
-        filters = {k: v for k, v in request.query_params.items() if v and k != "page"}
-        raw_page = request.query_params.get("page", "1")
+        query: Any = request.query_params
+        if query.get("live") and request.headers.get("hx-request"):
+            # A poll carries no filters of its own: it asks for the list the browser is showing.
+            query = _shown_query(request)
+        filters = {k: v for k, v in query.items() if v and k not in ("page", "live")}
+        raw_page = query.get("page", "1")
         page_no = max(int(raw_page), 1) if raw_page.isdigit() else 1
         with closing(conn()) as c:
             rows = data.list_findings(c, filters)
@@ -164,7 +259,14 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
                 "query": urlencode(filters),
             }
             if request.headers.get("hx-request"):
-                return page(request, "_results.html", rows=shown, pages=pages, filters=filters)
+                return page(
+                    request,
+                    "_results.html",
+                    rows=shown,
+                    pages=pages,
+                    filters=filters,
+                    live=live_view(),
+                )
             return page(
                 request,
                 "index.html",
@@ -175,9 +277,15 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
                 options=data.filter_options(c),
                 pqc=data.pqc_share(c),
                 stats=data.overview(c),
+                live=live_view(),
                 # The banner belongs to the overview: a filtered list shows only its rows.
                 token_banner=None if filters else data.honeytoken_banner(c),
             )
+
+    @app.get("/attack", response_class=HTMLResponse)
+    async def attack_page(request: Request) -> Response:
+        with closing(conn()) as c:
+            return page(request, "attack.html", nav="attack", matrix=data.attack_matrix(c))
 
     @app.get("/actors", response_class=HTMLResponse)
     async def actors(request: Request) -> Response:
@@ -194,14 +302,10 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
 
     @app.post("/refresh")
     async def refresh() -> Response:
-        def _run_correlation():
-            c = conn()
-            try:
-                correlate_store.run(c)
-            finally:
-                c.close()
-
-        await run_in_threadpool(_run_correlation)
+        async with feed.lock:  # waits for a background pass rather than overlapping it
+            await run_in_threadpool(correlate_db, db_file)
+        feed.updated = datetime.now(UTC)
+        feed.failed = False
         return RedirectResponse("/", status_code=303)
 
     @app.post("/clear")

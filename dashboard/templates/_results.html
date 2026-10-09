@@ -1,4 +1,12 @@
 {% from "_macros.html" import scorebar, verdict %}
+<p class="live-status small">
+  {% if live.enabled %}<span class="live-dot" aria-hidden="true"></span><b>Live</b>
+    {% if judge_mode %}<span class="muted">· correlation paused in judge mode, new rows still appear</span>
+    {% elif live.failed %}<span class="muted">· the last pass failed, see the server log</span>
+    {% elif live.updated %}<span class="muted">· updated {{ live.updated|when }} UTC</span>
+    {% else %}<span class="muted">· first pass not run yet</span>{% endif %}
+  {% else %}<span class="muted">Auto-update is off (QLURE_LIVE=0). Press "Re-run correlation" to refresh.</span>{% endif %}
+</p>
 {% if rows %}
 <div class="table-wrap">
 <table>
@@ -38,5 +46,5 @@
   {% if pages.next %}<a class="btn secondary sm" href="/?{{ pages.query }}{{ '&' if pages.query }}page={{ pages.next }}">Next</a>{% endif %}
 </div>
 {% else %}
-<div class="empty">No sessions match. If the decoys have been visited, press "Re-run correlation".</div>
+<div class="empty">{% if filters or pages.total %}No sessions match. If the decoys have been visited, press "Re-run correlation".{% else %}No data yet. Run python tools/seed_demo.py --db data/demo.db to load sample data, or start the decoys (see docs/DEMO.md).{% endif %}</div>
 {% endif %}
