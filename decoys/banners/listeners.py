@@ -1,8 +1,9 @@
 """FTP, MySQL and Redis listeners.
 
-Each sends its greeting (Redis has none), reads the first bytes the visitor sends,
-logs them, and closes. Like the SSH decoy, each listener reads the gateway's PROXY
-line first so events carry the real visitor address.
+Each sends its greeting (Redis has none) and runs a short fixed-reply dialogue from
+decoys/banners/dialogues.py (at most 8 commands, 10 s), logs the first bytes, and closes.
+Like the SSH decoy, each listener reads the gateway's PROXY line first so events carry the
+real visitor address.
 """
 
 from __future__ import annotations
@@ -17,12 +18,18 @@ from collections.abc import Callable
 from functools import partial
 
 from decoys import content
+from decoys.banners import dialogues
 from decoys.common import BadProxyHeader, read_proxy_header
 from qlure.events import Action, Service, emit
 
 READ_TIMEOUT = 10
 FTP_BANNER = b"220 ProFTPD 1.3.8 Server (Veltrix Files)\r\n"  # the default greeting
-REDIS_NOAUTH = b"-NOAUTH Authentication required.\r\n"
+REDIS_NOAUTH = dialogues.NOAUTH
+_BUDGETS = {
+    Service.FTP: dialogues.FTP_BUDGET,
+    Service.MYSQL: dialogues.MYSQL_PACKET_LIMIT + 4,
+    Service.REDIS: dialogues.REDIS_BUDGET,
+}
 
 
 def mysql_greeting(connection_id: int = 1) -> bytes:
@@ -67,31 +74,44 @@ async def _handle(
         "session_id": uuid.uuid4().hex,
     }
     emit({**base, "action": Action.CONNECT})
-    first = b""
-    try:
-        data = greeting() if callable(greeting) else greeting  # FTP's banner can be changed live
-        if data:
-            writer.write(data)
-            await writer.drain()
-        first = await asyncio.wait_for(reader.read(1024), READ_TIMEOUT)
-        if service is Service.REDIS and first:
-            writer.write(REDIS_NOAUTH)
-            await writer.drain()
-    except (TimeoutError, OSError):
-        pass
-    emit(
-        {
-            **base,
-            "action": Action.BANNER,
-            "request": {
+
+    def log(action: Action, **extra: object) -> None:
+        emit({**base, "action": action, **extra})
+
+    banner_sent = False
+
+    def log_banner(first: bytes) -> None:
+        nonlocal banner_sent
+        banner_sent = True
+        log(
+            Action.BANNER,
+            request={
                 "bytes_len": len(first),
                 "first_bytes_hex": first[:64].hex(),
                 "first_bytes_preview": first[:256].decode("utf-8", errors="replace"),
             },
-        }
-    )
-    writer.close()
-    emit({**base, "action": Action.DISCONNECT})
+        )
+
+    buf = dialogues.Buf(reader, _BUDGETS[service], log_banner)
+    try:
+        data = greeting() if callable(greeting) else greeting  # FTP's banner can be changed live
+        async with asyncio.timeout(READ_TIMEOUT):  # the whole conversation, not each read
+            if data:
+                writer.write(data)
+                await writer.drain()
+            if service is Service.FTP:
+                await dialogues.ftp(buf, writer, log)
+            elif service is Service.MYSQL:
+                await dialogues.mysql(buf, writer, log, data, visitor.ip)
+            else:
+                await dialogues.redis(buf, writer, log)
+    except (TimeoutError, OSError, dialogues.Closed):
+        pass
+    finally:  # also when the server is shut down mid-conversation
+        if not banner_sent:
+            log_banner(b"")
+        writer.close()
+        log(Action.DISCONNECT)
 
 
 _mysql_ids = itertools.count(1)
