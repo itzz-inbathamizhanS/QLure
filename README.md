@@ -57,6 +57,13 @@ Phases 0 to 6 plus a learned second opinion are in place:
   same labels and marks the result NOT VALID if any of those runs were in its training data.
   No model ships with the repo: none can exist until real labelled captures do. There is no
   generative AI here on purpose, so explanations stay the same every time and nothing needs internet.
+- Session grouping also merges a long, tight-gap run of requests from one `(src_ip, service)`
+  even when `client_fp` changes on every request (real scanners like Nikto do this), as long as
+  the run is at least 6 events with no gap over 1 second. See
+  `docs/eval-results-2026-10-09.md` for the real run that found this and the fix's effect on it.
+  A thin probe spread across several services (`nmap -sV`), or a single blocked request, still
+  does not cross the Noteworthy bar alone, because a verdict is still decided per session, not
+  per actor; that is a bigger change, left for later.
 - Post-quantum extras:
   - The SSH decoy reads each client's key-exchange offer and logs `kex_offered`, `kex_fp` and
     `pqc_capable` on connect and login events, and uses the client's version line as `client_fp`.
