@@ -16,7 +16,7 @@ from typing import Any
 from urllib.parse import urlencode, urlparse
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
@@ -109,7 +109,7 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
             cross_site = request.headers.get("sec-fetch-site") == "cross-site"
             if cross_site or (origin and urlparse(origin).netloc != request.headers.get("host")):
                 return Response("Cross-site request refused", status_code=403)
-        if not path.startswith("/static") and path != "/login":
+        if not path.startswith("/static") and path not in ("/login", "/favicon.ico"):
             if not auth.valid(request.cookies.get(COOKIE)):
                 return RedirectResponse("/login", status_code=303)
         response = await call_next(request)
@@ -120,6 +120,11 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
         )
         response.headers["Cache-Control"] = "no-store"
         return response
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon() -> Response:
+        # Public and static, like /static: browsers ask for it before any login.
+        return FileResponse(HERE / "static" / "favicon.svg", media_type="image/svg+xml")
 
     @app.get("/login", response_class=HTMLResponse)
     async def login_page(request: Request) -> Response:
