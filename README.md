@@ -61,9 +61,16 @@ Phases 0 to 6 plus a learned second opinion are in place:
   even when `client_fp` changes on every request (real scanners like Nikto do this), as long as
   the run is at least 6 events with no gap over 1 second. See
   `docs/eval-results-2026-10-09.md` for the real run that found this and the fix's effect on it.
-  A thin probe spread across several services (`nmap -sV`), or a single blocked request, still
-  does not cross the Noteworthy bar alone, because a verdict is still decided per session, not
-  per actor; that is a bigger change, left for later.
+- Every finding also carries its actor's combined score (`actor_score`/`actor_verdict`,
+  every rule hit across all of the actor's sessions, deduplicated and scored once) and an
+  `effective_verdict`: the more serious of the session's own verdict and its actor's. A thin
+  session (one blocked `sqlmap` request, one `nmap -sV` probe) that belongs to an actor doing
+  something clearly malicious elsewhere is flagged through this, without changing the session's
+  own score — but only when that session fired at least one rule of its own, so a bystander who
+  merely reused a guessed password is never swept up by someone else's verdict. A session that is
+  the *only* evidence its actor has still does not cross the Noteworthy bar; combining evidence
+  cannot manufacture evidence that was never captured. See the "actor-level" update in
+  `docs/eval-results-2026-10-09.md` for the real case this fixed and the one it honestly didn't.
 - Post-quantum extras:
   - The SSH decoy reads each client's key-exchange offer and logs `kex_offered`, `kex_fp` and
     `pqc_capable` on connect and login events, and uses the client's version line as `client_fp`.

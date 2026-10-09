@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from qlure.correlate.actors import build_actors
 from qlure.correlate.explain import explain
-from qlure.correlate.model import Actor, Finding, RuleHit, Session
+from qlure.correlate.model import Actor, Finding, RuleHit, Session, event_time
 from qlure.correlate.rules import (
     SESSION_RULES,
     load_config,
@@ -84,6 +84,40 @@ def _score(session: Session, hits: list[RuleHit]) -> tuple[int, list[tuple[str, 
     return score, suppressors
 
 
+def _actor_hits(all_hits: list[RuleHit]) -> list[RuleHit]:
+    """One combined hit per distinct rule the actor triggered anywhere, evidence merged.
+
+    A rule that fired identically in two of the actor's sessions (R1 and R10 do, by
+    construction) must count once in the actor's score, not once per session.
+    """
+    by_rule: dict[str, RuleHit] = {}
+    for hit in all_hits:
+        existing = by_rule.get(hit.rule_id)
+        if existing is None:
+            by_rule[hit.rule_id] = hit
+            continue
+        by_rule[hit.rule_id] = replace(
+            existing,
+            evidence=tuple(dict.fromkeys(existing.evidence + hit.evidence)),
+            first_seen=min(
+                (t for t in (existing.first_seen, hit.first_seen) if t is not None), default=None
+            ),
+        )
+    return sorted(by_rule.values(), key=lambda h: int(h.rule_id[1:]))
+
+
+def _actor_score(actor: Actor, hits: list[RuleHit]) -> tuple[int, list[tuple[str, int]]]:
+    """Score the actor the same way a session is scored, over all its events at once."""
+    combined = Session(
+        session_id=f"{actor.actor_id}-combined",
+        service=actor.sessions[0].service,
+        src_ip=actor.sessions[0].src_ip,
+        client_fp=None,
+        events=sorted((e for s in actor.sessions for e in s.events), key=lambda e: event_time(e)),
+    )
+    return _score(combined, hits)
+
+
 def correlate(events: list[Event]) -> Result:
     sessions = build_sessions(events)
     actors = build_actors(sessions)
@@ -109,6 +143,21 @@ def correlate(events: list[Event]) -> Result:
             for session in actor.sessions:
                 if per_session[session.session_id]:
                     per_session[session.session_id].append(chain)
+            all_hits.append(chain)
+
+        actor_hits = _actor_hits(all_hits)
+        actor_score, actor_suppressors = _actor_score(actor, actor_hits)
+        actor_verdict = verdict_for(actor_score, actor_hits)
+        actor_explanation = explain(
+            Finding(
+                session=actor.sessions[0],
+                actor_id=actor.actor_id,
+                score=actor_score,
+                verdict=actor_verdict,
+                hits=actor_hits,
+                suppressors=actor_suppressors,
+            )
+        )
 
         for session in actor.sessions:
             hits = per_session[session.session_id]
@@ -120,6 +169,10 @@ def correlate(events: list[Event]) -> Result:
                 verdict=verdict_for(score, hits),
                 hits=hits,
                 suppressors=suppressors,
+                actor_score=actor_score,
+                actor_verdict=actor_verdict,
+                actor_hits=actor_hits,
+                actor_explanation=actor_explanation,
             )
             finding.explanation = explain(finding)
             findings.append(finding)

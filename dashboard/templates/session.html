@@ -4,12 +4,22 @@
 <div class="row">
   <h1>Session <span class="muted">{{ s.session_id }}</span></h1>
   <span class="spacer"></span>
-  <span class="badge verdict-{{ s.verdict }}">{{ s.verdict }} · {{ s.score }}</span>
+  <span class="badge verdict-{{ s.effective_verdict }}">{{ s.effective_verdict }} · {{ s.actor_score if s.effective_verdict != s.verdict else s.score }}</span>
 </div>
 <p class="muted">{{ s.service }} · {{ s.src_ip }} · actor {{ s.actor_id }} · {{ s.first_seen }} to {{ s.last_seen }}</p>
 
+{% if s.actor_verdict != s.verdict or s.actor_score != s.score %}
 <div class="panel">
-  <h2>Why this verdict</h2>
+  <h2>This actor overall</h2>
+  <p>This one session scores <strong>{{ s.verdict }} ({{ s.score }})</strong> on its own.
+    Combined with everything else this actor did, across all its sessions, it is
+    <strong>{{ s.actor_verdict }} ({{ s.actor_score }})</strong>.</p>
+  <pre class="explanation">{{ s.actor_explanation }}</pre>
+</div>
+{% endif %}
+
+<div class="panel">
+  <h2>Why this session's own verdict</h2>
   <pre class="explanation">{{ s.explanation }}</pre>
   {% if s.suppressors %}
   <p class="muted">Lowered by:

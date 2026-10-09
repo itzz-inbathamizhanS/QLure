@@ -122,3 +122,41 @@ attributed thin session can still sit under the Noteworthy bar alone. Fixing tha
 actor across its sessions, which is a bigger change to the finding model (one finding per session
 today, in the database schema and the dashboard both) and was deliberately left for later rather
 than rushed here.
+
+## Update, same day: scoring the actor, not just the session
+
+Added `actor_score`/`actor_verdict`/`actor_hits`/`actor_explanation` to every finding: the same
+actor's whole picture, every rule it hit across all its sessions, deduplicated and scored once
+exactly the way a single session is scored. Each finding now also exposes `effective_verdict`,
+the more serious of its own verdict and its actor's — but **only when the session fired at least
+one rule of its own**. A session with zero hits is never promoted this way; it would mean a
+bystander who merely reused a guessed password gets swept into an actor's verdict on no evidence
+of its own, which a new test (`test_actor_score_promotes_a_thin_session_but_never_a_clean_bystander`)
+drives through the real decoy to confirm. `qlure/evaluate.py`'s confusion matrix, and the
+dashboard's verdict filter and badges, all now read `effective_verdict`. A session's own `score`
+and `verdict` are never changed by any of this. All 116 tests pass.
+
+Re-running `qlure eval` on the same captures, nothing re-recorded:
+
+| | before (per-session only) | after (actor-level) |
+|---|---|---|
+| tuning recall | 0.27 (4/15) | **0.33 (5/15)** |
+| tuning false positives | 0 | 0 (unchanged) |
+| heldout recall | 0.00 (0/9) | 0.00 (unchanged) |
+| heldout false positives | 0 | 0 (unchanged) |
+
+The one session this actually fixed, in real captured data: the honeytoken-chain run's web
+session that only read `/backup/config.bak` (one request, R9, score 5, held at Benign on its
+own) shares its actor with the SSH session that went on to use the leaked credential (R5/R7/R8,
+score 100, Noteworthy). That web session is now correctly Noteworthy too — it is part of the
+same attack, and the dashboard's new "This actor overall" panel on its session page shows why.
+
+Heldout recall did not move, and that is also an honest result, not a bug: the `nmap -sV` and
+`sqlmap` sessions there are each the *only* evidence their actor has. Combining an actor's
+sessions only helps when the actor also did something stronger elsewhere; it cannot manufacture
+evidence that was never captured. A pure recon-only port scan against six services there sums to
+R1 (service sweep, 20) + R6 (scanner tool, 15) = 35, still under the 60-point Noteworthy bar,
+whether scored per session or across the whole actor. That is the correct call given what was
+actually observed, not a gap this change was meant to close — closing it would mean lowering the
+Noteworthy threshold or adding a rule, a weights/threshold decision for the tuning split, not a
+scoring-architecture one, and is left for later rather than fit to this one capture.

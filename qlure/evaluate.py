@@ -74,9 +74,18 @@ def _why_missed(finding: Finding, noteworthy: int) -> str:
     )
 
 
+def _actor_flagged(finding: Finding) -> bool:
+    """True when this session only counts as Noteworthy because of its actor's combined score."""
+    return finding.effective_verdict == "Noteworthy" and finding.verdict != "Noteworthy"
+
+
 def _explains_everything(finding: Finding) -> bool:
-    text = finding.explanation
-    if not finding.hits:
+    hits, text = (
+        (finding.actor_hits, finding.actor_explanation)
+        if _actor_flagged(finding)
+        else (finding.hits, finding.explanation)
+    )
+    if not hits:
         return False
     return all(
         hit.rule_id in text
@@ -84,7 +93,7 @@ def _explains_everything(finding: Finding) -> bool:
         and hit.measured in text
         and hit.evidence
         and hit.evidence[0] in text
-        for hit in finding.hits
+        for hit in hits
     )
 
 
@@ -131,10 +140,14 @@ def evaluate(root: Path, model: Any = None) -> dict[str, Any]:
     events = {e.event_id: e for run in runs for e in run.events}
     noteworthy = load_config()["verdicts"]["noteworthy"]
 
-    tp = sum(1 for f, label, _ in rows if label == "malicious" and f.verdict == "Noteworthy")
-    fn = sum(1 for f, label, _ in rows if label == "malicious" and f.verdict != "Noteworthy")
-    fp = sum(1 for f, label, _ in rows if label == "benign" and f.verdict == "Noteworthy")
-    tn = sum(1 for f, label, _ in rows if label == "benign" and f.verdict != "Noteworthy")
+    tp = sum(
+        1 for f, label, _ in rows if label == "malicious" and f.effective_verdict == "Noteworthy"
+    )
+    fn = sum(
+        1 for f, label, _ in rows if label == "malicious" and f.effective_verdict != "Noteworthy"
+    )
+    fp = sum(1 for f, label, _ in rows if label == "benign" and f.effective_verdict == "Noteworthy")
+    tn = sum(1 for f, label, _ in rows if label == "benign" and f.effective_verdict != "Noteworthy")
     precision, recall = _ratio(tp, tp + fp), _ratio(tp, tp + fn)
     f1 = (
         None
@@ -161,7 +174,7 @@ def evaluate(root: Path, model: Any = None) -> dict[str, Any]:
         marked += len(entry["evidence"])
         linked += len(in_finding & set(entry["evidence"]))
 
-    flagged = [f for f, _, _ in rows if f.verdict == "Noteworthy"]
+    flagged = [f for f, _, _ in rows if f.effective_verdict == "Noteworthy"]
     explained = sum(1 for f in flagged if _explains_everything(f))
 
     benign_total = fp + tn
@@ -170,12 +183,12 @@ def evaluate(root: Path, model: Any = None) -> dict[str, Any]:
             "session_id": f.session.session_id,
             "run": sorted({run_of[i].meta["run_id"] for i in f.session.event_ids})[0],
             "kind": "missed attack" if label == "malicious" else "false alarm",
-            "verdict": f.verdict,
+            "verdict": f.effective_verdict,
             "score": f.score,
             "reason": _why_missed(f, noteworthy) if label == "malicious" else f.explanation,
         }
         for f, label, _ in rows
-        if (label == "malicious") != (f.verdict == "Noteworthy")
+        if (label == "malicious") != (f.effective_verdict == "Noteworthy")
     ]
     metrics = {
         "precision": precision,
@@ -216,12 +229,12 @@ def _model_report(model: Any, runs: list[Run], rows: list[Any]) -> dict[str, Any
         fp += flagged and not malicious
         fn += (not flagged) and malicious
         tn += (not flagged) and not malicious
-        if flagged != (finding.verdict == "Noteworthy"):
+        if flagged != (finding.effective_verdict == "Noteworthy"):
             disagreements.append(
                 {
                     "session_id": finding.session.session_id,
                     "label": label,
-                    "rules": finding.verdict,
+                    "rules": finding.effective_verdict,
                     "model": round(model.probability(finding.session), 2),
                 }
             )
