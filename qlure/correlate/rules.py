@@ -20,7 +20,21 @@ FAMILY_ORDER = ("recon", "credential", "misuse")
 
 @lru_cache(maxsize=1)
 def load_config() -> dict[str, Any]:
-    return yaml.safe_load(RULES_FILE.read_text(encoding="utf-8"))
+    """rules.yaml with the operator's saved weights, thresholds and allowlist laid on top."""
+    from qlure.settings import load_settings
+
+    config = yaml.safe_load(RULES_FILE.read_text(encoding="utf-8"))
+    saved = load_settings()
+    tuning = saved["rules"]
+    config["verdicts"] = {"suspicious": tuning["suspicious"], "noteworthy": tuning["noteworthy"]}
+    for rule_id, weight in tuning["weights"].items():
+        config["rules"][rule_id]["weight"] = weight
+    for rule_id, values in tuning["thresholds"].items():
+        config["rules"][rule_id]["threshold"].update(values)
+    allow = config["suppressors"]["allowlisted_clients"]
+    allow["ips"] = list(saved["allowlist"]["ips"])
+    allow["user_agents"] = list(saved["allowlist"]["user_agents"])
+    return config
 
 
 @lru_cache(maxsize=1)

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Report {{ s.session_id }}{% endblock %}
+{% block content %}
+<h1>Incident report</h1>
+<p>Session {{ s.session_id }} · {{ s.service }} · {{ s.src_ip }} · actor {{ s.actor_id }}<br>
+{{ s.first_seen }} to {{ s.last_seen }}</p>
+<p><span class="badge verdict-{{ s.verdict }}">{{ s.verdict }}</span> score {{ s.score }} · review label: {{ s.label }}</p>
+<h2>Why</h2>
+<pre class="explanation">{{ s.explanation }}</pre>
+<h2>Rules matched</h2>
+<ul>
+{% for h in s.hits %}<li><strong>{{ h.rule_id }} {{ h.name }}</strong> ({{ h.family }}, {{ h.confidence }}): needs {{ h.threshold }}; saw {{ h.measured }}</li>{% else %}<li>None</li>{% endfor %}
+</ul>
+<h2>Events</h2>
+<table>
+<thead><tr><th>Time</th><th>Action</th><th>Detail</th><th>Hash</th></tr></thead>
+<tbody>
+{% for e in s.events %}
+<tr><td>{{ e.event.ts }}</td><td>{{ e.event.action.value }}</td><td>{{ e.summary }}</td><td>{{ e.hash[:16] }}</td></tr>
+{% endfor %}
+</tbody>
+</table>
+<h2>Evidence integrity</h2>
+{% if chain.verified %}
+<p>The hash chain is intact: {{ chain.events_checked }} stored events match the log archive.</p>
+{% else %}
+<p class="banner">The hash chain failed at event {{ chain.first_problem.event_id }}: {{ chain.first_problem.reason }}.</p>
+{% endif %}
+<p class="muted">Use your browser's print function to save this page as a PDF.</p>
+{% endblock %}

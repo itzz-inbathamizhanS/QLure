@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
+<title>{% block title %}Q-Lure{% endblock %}</title>
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/htmx.min.js" defer></script>
+</head>
+<body>
+{% block header %}
+<header>
+  <strong>Q-Lure</strong>
+  <a href="/">Sessions</a>
+  <a href="/config">Settings</a>
+  <span class="spacer"></span>
+  {% if judge_mode %}<span class="badge">Judge mode: read-only</span>{% endif %}
+  <form method="post" action="/logout"><button class="secondary" type="submit">Log out</button></form>
+</header>
+{% endblock %}
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

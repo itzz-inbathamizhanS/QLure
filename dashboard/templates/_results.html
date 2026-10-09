@@ -1,0 +1,27 @@
+{% if rows %}
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th>Verdict</th><th>Score</th><th>Actor</th><th>Service</th><th>Source</th>
+    <th>Client</th><th>Rules</th><th>Started</th><th>Review</th>
+  </tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr>
+    <td><span class="badge verdict-{{ r.verdict }}">{{ r.verdict }}</span></td>
+    <td>{{ r.score }}</td>
+    <td>{{ r.actor_id }}{% if r.actor_sessions > 1 %} <span class="muted">({{ r.actor_sessions }} sessions: {{ r.services|join(', ') }})</span>{% endif %}</td>
+    <td>{{ r.service }}</td>
+    <td>{{ r.src_ip }}</td>
+    <td>{{ r.agent }}</td>
+    <td>{{ r.rules|join(', ') }}</td>
+    <td>{{ r.first_seen }}</td>
+    <td><a href="/session/{{ r.session_id }}">Open</a> <span class="muted">{{ r.label }}</span></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="muted">No sessions match. If the decoys have been visited, press "Re-run correlation".</p>
+{% endif %}

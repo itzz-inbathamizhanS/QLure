@@ -1,0 +1,55 @@
+:root {
+  --bg: #f6f7f9; --panel: #fff; --text: #1d2733; --muted: #5d6b7a; --line: #d9dee5;
+  --accent: #1d4ed8; --bad: #b42318; --warn: #b45309; --good: #15803d;
+  --recon: #2563eb; --credential: #d97706; --exploit: #dc2626; --misuse: #7c3aed;
+  --chain: #0f766e; --none: #94a3b8;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f141a; --panel: #18202a; --text: #e6ebf1; --muted: #9aa8b8; --line: #2c3745;
+    --accent: #6ea0ff; --bad: #ff8a80; --warn: #f5b25c; --good: #6fd08c;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 15px/1.5 system-ui, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+header { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; padding: 12px 24px;
+  background: var(--panel); border-bottom: 1px solid var(--line); }
+header a { color: var(--text); text-decoration: none; font-weight: 600; }
+header .spacer { flex: 1; }
+main { max-width: 1200px; margin: 0 auto; padding: 20px 24px 60px; }
+h1 { font-size: 22px; margin: 8px 0 16px; }
+h2 { font-size: 17px; margin: 24px 0 8px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: 13px; }
+.table-wrap { overflow-x: auto; }
+a { color: var(--accent); }
+.badge { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; border: 1px solid currentColor; }
+.verdict-Noteworthy { color: var(--bad); } .verdict-Suspicious { color: var(--warn); } .verdict-Benign { color: var(--good); }
+.muted { color: var(--muted); }
+form.filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+label { display: block; font-size: 12px; color: var(--muted); }
+input, select, textarea, button { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+button { cursor: pointer; background: var(--accent); color: #fff; border-color: var(--accent); }
+button.secondary { background: transparent; color: var(--text); border-color: var(--line); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.banner { padding: 8px 24px; background: #fef3c7; color: #78350f; font-weight: 600; }
+.notice { padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; border: 1px solid var(--line); }
+.notice.good { border-color: var(--good); color: var(--good); } .notice.bad { border-color: var(--bad); color: var(--bad); }
+pre { white-space: pre-wrap; word-break: break-word; margin: 0; font: 12.5px/1.45 ui-monospace, Consolas, monospace; }
+.explanation { white-space: pre-wrap; }
+.timeline { list-style: none; margin: 0; padding: 0; }
+.timeline li { border-left: 5px solid var(--none); padding: 6px 10px; margin: 4px 0; background: var(--panel); border-radius: 0 6px 6px 0; }
+.timeline li.family-recon { border-left-color: var(--recon); } .timeline li.family-credential { border-left-color: var(--credential); }
+.timeline li.family-exploit { border-left-color: var(--exploit); } .timeline li.family-misuse { border-left-color: var(--misuse); }
+.timeline li.family-chain { border-left-color: var(--chain); }
+.timeline li.gap { border-left-style: dashed; color: var(--muted); font-style: italic; background: transparent; }
+.chip { display: inline-block; font-size: 12px; padding: 0 7px; border-radius: 4px; background: var(--line); margin-right: 4px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.card { border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: var(--panel); border-top: 4px solid var(--none); }
+.card.family-recon { border-top-color: var(--recon); } .card.family-credential { border-top-color: var(--credential); }
+.card.family-exploit { border-top-color: var(--exploit); } .card.family-misuse { border-top-color: var(--misuse); } .card.family-chain { border-top-color: var(--chain); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+@media print { header, .noprint, button { display: none; } body { background: #fff; color: #000; } }

@@ -47,7 +47,12 @@ CREATE TABLE IF NOT EXISTS honeytokens (
 );
 CREATE TABLE IF NOT EXISTS config_audit (
     audit_id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, who TEXT NOT NULL,
-    key TEXT NOT NULL, old_value TEXT, new_value TEXT
+    key TEXT NOT NULL, old_value TEXT, new_value TEXT,
+    outcome TEXT NOT NULL DEFAULT 'applied', reason TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS labels (
+    session_id TEXT PRIMARY KEY, label TEXT NOT NULL, evidence_event_ids TEXT NOT NULL,
+    who TEXT NOT NULL, ts TEXT NOT NULL
 );
 """
 
@@ -72,3 +77,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
         columns = [row["name"] for row in conn.execute(f"PRAGMA table_info({table})")]
         if columns and marker not in columns:
             conn.execute(f"DROP TABLE {table}")
+    audit = [row["name"] for row in conn.execute("PRAGMA table_info(config_audit)")]
+    if audit and "outcome" not in audit:
+        conn.execute("ALTER TABLE config_audit ADD COLUMN outcome TEXT NOT NULL DEFAULT 'applied'")
+        conn.execute("ALTER TABLE config_audit ADD COLUMN reason TEXT NOT NULL DEFAULT ''")

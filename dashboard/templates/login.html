@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Q-Lure login{% endblock %}
+{% block header %}{% endblock %}
+{% block content %}
+<h1>Q-Lure</h1>
+<form class="panel" method="post" action="/login">
+  <label>Password
+    <input type="password" name="password" autocomplete="current-password" autofocus required>
+  </label>
+  {% if error %}<p class="banner">{{ error }}</p>{% endif %}
+  <button type="submit">Log in</button>
+</form>
+{% endblock %}
