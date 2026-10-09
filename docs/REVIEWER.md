@@ -1,11 +1,23 @@
 # Reviewer walkthrough (about 5 minutes)
 
-QLure runs fake services (a web portal, a REST API, an SSH-like shell, and FTP, MySQL and Redis
-banner listeners) and records what visitors do. Events are hash-chained, grouped into sessions,
-scored by eleven readable rules (R1 to R11), and shown on a dashboard with their evidence.
+QLure runs fake services (a web portal, a REST API, an SSH-like shell, a fake Docker Engine API, and
+FTP, MySQL and Redis banner listeners) and records what visitors do. Events are hash-chained,
+grouped into sessions, scored by eleven readable rules (R1 to R11), and shown on a dashboard with
+their evidence.
+
+## What changed since the audit
+
+- Dashboard: live feed on Sessions (Live indicator, correlation every 10 s), `/attack` ATT&CK
+  matrix, SSH "Terminal replay" panel, dark and light toggle in the sidebar.
+- Downloads: `/export` with CSV, STIX 2.1 and blocklist files; `?min=suspicious` adds Suspicious sessions.
+- Ops: public `/healthz`, `/metrics` (login unless `QLURE_METRICS_PUBLIC=1`); `qlure export`, `qlure alert`, `qlure prune`.
+- Decoys: fake Docker Engine API on port 2375 (service `docker`); R5 labels its container patterns. Seven services, still R1 to R11.
+- Sample data: `tools/seed_demo.py` (10 sessions, 7 actors) and `tools/demo_scenario.py` (13 labelled steps).
+- Open: the hosted snapshot is not rebuilt yet (P4.5). The live feed does not forward, so run the forwarder.
 
 **Safety promise.** Every planted secret is fake and listed in `decoys/honeytokens.yaml`. The
-decoys execute nothing: the fake shell only records text, and database and Redis replies are fixed.
+decoys execute nothing: the fake shell only records text, the Docker API only returns fixed JSON,
+and database and Redis replies are fixed.
 The demo sends traffic only to `127.0.0.1`, from documentation addresses (198.51.100.x, 203.0.113.x).
 Docker publishes every port on `127.0.0.1` only. Started directly with Python, the web and API
 servers listen on localhost; the SSH and banner listeners bind `0.0.0.0` unless you set
@@ -48,6 +60,8 @@ qlure verify --logs logs --db data/qlure.db
 ```
 
 Restart the dashboard on this store (`QLURE_DB=data/qlure.db QLURE_LOGS=logs`) and reload Sessions.
+The live feed re-scores the store every 10 seconds, but new lines only reach the store through
+`qlure forward`, so keep running it (or `forward --follow`) while you demo.
 
 ## Docker path
 
@@ -70,14 +84,16 @@ times change on every run, so this list uses visitor address, service and score.
 
 1. **Sessions (`/`).** The verdict bar reads 4 / 4 / 2. Rows show service and rule chips, plus
    ATT&CK technique chips. Four rows carry a **honeytoken** badge: web, SSH and API from
-   `198.51.100.77`, and Redis from `203.0.113.91`. "Honeytokens touched" reads 5.
+   `198.51.100.77`, and Redis from `203.0.113.91`. "Honeytokens touched" reads 5. The **Live**
+   indicator above the list shows that the list refreshes itself.
 2. **Honeytoken banner (top of Sessions, unfiltered).** It names the most recent planted secret
    used (`ht-redis-001`), the visitor, the actor, and links to the session.
 3. **Session `198.51.100.77`, web, score 100.** The **Story** panel is one paragraph built only from
    this session's rule hits. Each rule card under "Why this session's own verdict" gives its
    threshold, a "Q-Lure saw" measured value and evidence event IDs. R7 names the planted database
    password `ht-db-001`. The timeline shows each raw event with its `prev` and `hash`. Then open
-   **Evidence file (JSON)** and **Printable report**.
+   **Evidence file (JSON)** and **Printable report**. The same visitor's SSH session (score 95)
+   has a **Terminal replay** panel: eight commands in order, each with the decoy's own reply.
 4. **Actors (`/actors`).** Open the actor of `198.51.100.77` (web and SSH, combined score 100). Its
    **Kill chain** strip shows Recon reached, Credential not reached, Misuse reached, each with a
    first-event time. No seeded actor reaches all three stages, so R10 does not fire. The actor of
@@ -88,7 +104,13 @@ times change on every run, so this list uses visitor address, service and score.
 6. **Settings (`/config`).** Only safe settings exist. The **Judge mode (read-only)** switch makes
    settings and data clearing read-only and disables the "Mark malicious" and "Mark benign"
    buttons on session pages. Every change appears in the change history. Turn judge mode back off
-   afterwards. The **Dark mode** button in the top bar switches the theme.
+   afterwards. The **Dark mode** button at the bottom of the sidebar switches the theme.
+7. **ATT&CK matrix (`/attack`).** Techniques by tactic. Seen techniques are highlighted and link to
+   the highest-scoring session that shows them; unseen ones are dimmed and say so.
+8. **Export (`/export`).** Three downloads from the same store: CSV, STIX 2.1 bundle and blocklist.
+   By default only Noteworthy sessions are included, so the blocklist holds `198.51.100.77` and
+   `203.0.113.91`. With **Include Suspicious sessions** (`?min=suspicious`), `198.51.100.23` and
+   `203.0.113.44` are added.
 
 ## Why you can trust it
 
@@ -108,20 +130,21 @@ times change on every run, so this list uses visitor address, service and score.
 - **Honeytokens.** Eight fake secrets, each value containing "decoy". Some are accepted by another
   decoy (the web `/.env` password, the backup file's SSH login, the shell's `~/.bash_history` API
   key), so one attacker's sessions can link. Any use is logged and scored by R7.
-- **Judge mode.** Read-only: no label changes, no data clearing, and only the judge switch itself
-  can change. Every settings change is audited and can be rolled back.
+- **Judge mode.** Read-only for settings, labels and data clearing; only the judge switch itself
+  can change. The background live pass pauses, but **Re-run correlation** still works, and
+  downloads still work. Every settings change is audited and can be rolled back.
 
 ## Tests and checks (measured 2026-10-09)
 
 ```bash
-python -m pytest -q                                              # 442 passed, 2 xfailed
-python -m pytest -q tests/correlate/test_attack_coverage.py -v   # 45 passed, 2 xfailed
-ruff check . && ruff format --check .                            # all checks passed
+python -m pytest -q                                              # 619 passed, 2 xfailed
+python -m pytest -q tests/correlate/test_attack_coverage.py -v   # 48 passed, 2 xfailed
+ruff check .                                                     # All checks passed
 qlure schema --check                                             # exit 0: schema is current
 ```
 
 The two xfailed attack rows are known gaps, listed in [docs/ATTACK_COVERAGE.md](ATTACK_COVERAGE.md).
-Planned work is in [docs/ROADMAP.md](ROADMAP.md).
+Planned work and task status are in [docs/ROADMAP.md](ROADMAP.md).
 
 ## Honest limits
 
@@ -132,4 +155,7 @@ Read [docs/architecture/10-known-limits.md](architecture/10-known-limits.md) bef
 - In the seed, the API session from `198.51.100.77` is a separate actor (Noteworthy, 60). It is not
   joined to that visitor's web and SSH actor (score 100). Sessions never link by IP alone.
 - The credential stage appears only in the credential-stuffing actor, and R10 never fires in the seed.
+- The live feed only correlates. New events reach the store through the forwarder.
+- The canary honeytoken `ht-canary-001` raises no alert. The Docker API is a fixed fake: a
+  container it "creates" cannot be listed or inspected.
 - No learned model ships, and there is no held-out data from outside the team.

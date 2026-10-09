@@ -9,14 +9,18 @@ shows the investigator why a session was flagged.
 
 ## Status
 
-Phases 0 to 6 plus a learned second opinion are in place:
+Roadmap phases 0 to 4 are in place except P4.5 (the hosted snapshot rebuild). Task status is in
+[docs/ROADMAP.md](docs/ROADMAP.md). A learned second opinion is included as well.
 
 - Event schema in `qlure/events/` (Pydantic), exported to `docs/event.schema.json`, and `emit(event)`,
   the one helper every decoy uses to validate and append events to `logs/<service>.jsonl`.
-- Six decoys, all behind one nginx gateway on an `internal: true` network:
-  web portal (8080), REST API (8081), SSH-like server with a fake shell (2222),
-  a fake Docker Engine API (2375) and FTP / MySQL / Redis listeners (2121, 3306, 6379). The FTP, MySQL and Redis listeners run
-  short bounded dialogues (at most 8 commands, 10 seconds) and log login attempts and commands.
+- Seven decoy services in five containers, all behind one nginx gateway on an `internal: true`
+  network: web portal (8080), REST API (8081), SSH-like server with a fake shell (2222), a fake
+  Docker Engine API (service `docker`, 2375), and FTP / MySQL / Redis listeners (2121, 3306, 6379).
+  The FTP, MySQL and Redis listeners run short bounded dialogues (at most 8 commands, 10 seconds)
+  and log login attempts and commands. The Docker API answers fixed Docker Engine JSON and returns
+  fake ids for container create and exec; nothing is run, pulled or stored. Rule R5 labels those
+  requests (T1610, T1611, T1496, T1105).
 - Honeytokens (`decoys/honeytokens.yaml`): eight planted fake secrets. Some are accepted by another
   decoy: `/backup/config.bak` on the web portal gives the SSH password, the SSH shell's
   `~/.bash_history` gives the API key, and the API logs its use. Others are planted only.
@@ -35,10 +39,23 @@ Phases 0 to 6 plus a learned second opinion are in place:
 - A dashboard on `http://127.0.0.1:9000` (`dashboard/`): sessions list with filters and sorting,
   a session page with the explanation, rule cards, an evidence timeline (raw events and hashes),
   review labels, a JSON evidence export that carries the hash-chain check, and a printable report.
+  The dashboard also has:
+  - a **live feed** on the sessions list: a background correlation pass every `QLURE_LIVE_INTERVAL`
+    seconds (default 10, `QLURE_LIVE=0` turns it off) and a Live indicator. It only correlates; new
+    events reach the store through the forwarder;
+  - an **ATT&CK matrix** at `/attack`, with seen techniques linked to their top session;
+  - a **Terminal replay** panel on SSH sessions: the commands in order, with the decoy's replies;
+  - **indicator downloads** at `/export` (`/export.csv`, `/export.json` as STIX 2.1, `/export.txt`
+    as a blocklist), noteworthy by default, `?min=suspicious` for Suspicious too. Login required;
+    allowed in judge mode;
+  - `/healthz` (public JSON: store check and counts) and `/metrics` (Prometheus text, login
+    required unless `QLURE_METRICS_PUBLIC=1`);
+  - a dark and light theme toggle in the sidebar, saved in the browser.
   A settings page (`qlure/settings.py`) allows only safe changes: approved ports, fake content,
   scoring weights and an allowlist. Every change, accepted or refused, is audited and can be undone.
   There is no setting for outbound network, command execution, executable uploads or host folders.
-  Judge mode makes everything read-only. Rule weights, thresholds and the allowlist apply at once,
+  Judge mode makes settings, labels and Clear All read-only and pauses the live pass; Re-run
+  correlation and the downloads still work. Rule weights, thresholds and the allowlist apply at once,
   and the company name and FTP banner reach the web and FTP decoys through one small read-only
   file (`runtime/content.json`). Port and enable settings are saved and audited but a restart of
   the decoys is still needed: the dashboard has no control over Docker, on purpose.
@@ -92,6 +109,8 @@ Phases 0 to 6 plus a learned second opinion are in place:
 Show the dashboard on the hosted Vercel snapshot or live on your own machine, with the
 same walkthrough for both. See [docs/DEMO.md](docs/DEMO.md) for the steps, the commands for
 localhost, and troubleshooting. Reviewers: [docs/REVIEWER.md](docs/REVIEWER.md) is a 5-minute walkthrough from a fresh clone with no Docker.
+The hosted snapshot is built outside this repository (ROADMAP P4.5 is not done), so it may not show
+the newest pages. For a populated dashboard from a fresh clone, see Sample data below.
 
 ## Detection rules
 
@@ -101,8 +120,13 @@ and defined in [qlure/rules/rules.yaml](qlure/rules/rules.yaml).
 
 ## Docs
 
-- [docs/ROADMAP.md](docs/ROADMAP.md) for planned work, [docs/ATTACK_COVERAGE.md](docs/ATTACK_COVERAGE.md)
-  for ATT&CK coverage, and [docs/DEMO.md](docs/DEMO.md) for the demo walkthrough.
+- [docs/ROADMAP.md](docs/ROADMAP.md) for planned work and task status,
+  [docs/ATTACK_COVERAGE.md](docs/ATTACK_COVERAGE.md) for ATT&CK coverage,
+  [docs/DEMO.md](docs/DEMO.md) for the demo walkthrough and [docs/REVIEWER.md](docs/REVIEWER.md)
+  for a 5-minute walkthrough.
+- [docs/EXPORT.md](docs/EXPORT.md) (IOC files), [docs/ALERTS.md](docs/ALERTS.md) (webhook alerts),
+  [docs/RETENTION.md](docs/RETENTION.md) (`qlure prune`) and [docs/CHEATSHEET.md](docs/CHEATSHEET.md)
+  (commands).
 
 ## Domain scanner
 
@@ -140,7 +164,8 @@ qlure correlate                                     # scored sessions, most susp
 
 Open `http://127.0.0.1:9000` for the dashboard. Set the password with `QLURE_DASHBOARD_PASSWORD`
 before `docker compose up`; if you do not, a random one is printed in `docker compose logs dashboard`.
-The dashboard is not on the decoy network, reads the logs read-only and writes only `data/`.
+The dashboard is not on the decoy network. It reads the logs and writes only `data/`; its `logs/`
+mount is read-write only so that Clear All can empty the logs.
 
 The `egress-watch` container shares the web decoy's network namespace and reads `/proc/net` only.
 It appends an alert to `data/egress.jsonl` whenever a decoy opens an outbound connection, which a
@@ -158,7 +183,8 @@ uvicorn decoys.web.app:app --port 8080
 uvicorn decoys.api.app:app --port 8081
 ```
 
-The SSH and banner decoys expect the gateway's PROXY header, so run those through Docker.
+The SSH and banner decoys expect a PROXY line before any protocol bytes (the gateway writes it).
+Run those through Docker, or send the line yourself: `tools/demo_scenario.py` does by default.
 
 Events land in `logs/web.jsonl` (set `QLURE_LOG_DIR` to change the folder). Check any log file
 against the schema with:
@@ -166,6 +192,22 @@ against the schema with:
 ```sh
 qlure validate logs/*.jsonl
 ```
+
+## Sample data and labelled demo steps
+
+No Docker is needed for sample data. `tools/seed_demo.py` drives the real decoys in-process (no
+network) and writes a verified database: 10 sessions for 7 actors, 4 Noteworthy, 4 Suspicious and
+2 Benign. Everything in it is fake and uses documentation addresses.
+
+```sh
+python tools/seed_demo.py --db data/demo.db          # --force replaces existing sample data
+QLURE_DB=data/demo.db QLURE_LOGS=data/demo-logs QLURE_DASHBOARD_PASSWORD=choose-a-strong-password \
+  python -m uvicorn dashboard.app:app --port 9100
+```
+
+`tools/demo_scenario.py` sends 13 labelled, harmless attack steps to the decoys on loopback only
+(`--list` shows them, `--dry-run` sends nothing). It refuses any target other than `127.0.0.1`
+or `::1`. See [docs/REVIEWER.md](docs/REVIEWER.md) for the full walkthrough.
 
 ## Capture, replay and evaluate
 
@@ -198,6 +240,30 @@ choose the time their events are filed under. Replay covers the web and API deco
 replayed request arrives from the replaying machine's address, so visitors are told apart by
 user agent and cookie.
 
+## Command reference
+
+Run every command from the repository root. Defaults: database `data/qlure.db`, logs `logs/`.
+
+| Command | What it does | Details |
+|---|---|---|
+| `qlure schema [--check]` | Export the event JSON Schema, or fail if `docs/event.schema.json` is stale | [event.schema.json](docs/event.schema.json) |
+| `qlure validate FILES...` | Check JSONL event files against the schema | the Run it section |
+| `qlure forward [--follow]` | Copy new JSONL events into the store | [architecture 2](docs/architecture/02-data-flow.md) |
+| `qlure verify [--pub FILE]` | Check the hash chain against the JSONL archive | [architecture 4](docs/architecture/04-storage-and-integrity.md) |
+| `qlure correlate [--top N] [--iocs FILE]` | Group events into sessions and actors and score them | [architecture 5](docs/architecture/05-correlation-and-verdicts.md) |
+| `qlure export --format stix\|csv\|blocklist` | Read-only IOC export, `--min-verdict`, `--out` | [EXPORT.md](docs/EXPORT.md) |
+| `qlure alert` | Post new Noteworthy sessions to a webhook (off by default), `--dry-run` | [ALERTS.md](docs/ALERTS.md) |
+| `qlure prune --older-than 30d` | Delete old events behind a hash-chain anchor; needs `--yes` | [RETENTION.md](docs/RETENTION.md) |
+| `qlure watch-egress` | Alert when a decoy opens an outbound connection | the Run it section |
+| `qlure capture start\|stop\|labels` | Record and label a capture run | Capture, replay and evaluate |
+| `qlure replay FILE` | Send HAR, JSONL or CSV requests to the decoys | Capture, replay and evaluate |
+| `qlure eval FOLDER` | Precision, recall and more on labelled captures; `--strict` | Capture, replay and evaluate |
+| `qlure ml train FOLDER` | Train the learned second opinion on tuning captures | [architecture 8](docs/architecture/08-extras-pqc-and-ml.md) |
+| `qlure keygen`, `qlure sign` | ML-DSA-65 keys and signed checkpoints | [architecture 8](docs/architecture/08-extras-pqc-and-ml.md) |
+
+The demo tools are not part of the `qlure` command: `python tools/seed_demo.py` and
+`python tools/demo_scenario.py`.
+
 ## Develop
 
 ```sh
@@ -213,14 +279,14 @@ The event schema is the shared contract: fields are only ever added, never renam
 ```
 docker-compose.yml   all services, networks and limits
 gateway/             nginx: the only container with a route to the decoys (HTTP and raw TCP)
-decoys/              web, api, ssh, banners, fakefs, honeytokens.yaml   (Inbathamizhan S)
+decoys/              web, api, ssh, banners, dockerapi, fakefs, honeytokens.yaml   (Inbathamizhan S)
 qlure/events/        event schema + emit()                              (all, Prasanna Kumar Reddy)
 qlure/store/         forwarder, SQLite store, hash chain                (Prasanna Kumar Reddy)
 qlure/correlate/     sessions, actors, rules, scoring, explanations     (Bharadhwaj M)
 qlure/rules/         rules R1 to R11 in YAML                            (Bharadhwaj M)
 qlure/pqc/           ML-DSA signing, SSH KEX fingerprint (extra)
-qlure/cli.py         schema | validate | forward | verify | correlate | capture | replay | eval | keygen | sign
-dashboard/           session view and settings dashboard, FastAPI + HTMX (Prasanna Kumar Reddy)
+qlure/cli.py         schema | validate | forward | verify | correlate | export | alert | prune | watch-egress | capture | replay | eval | ml | keygen | sign
+dashboard/           sessions, live feed, ATT&CK matrix, exports, settings; FastAPI + HTMX (Prasanna Kumar Reddy)
 captures/            real captured sessions: tuning/ and heldout/
 tests/               pytest, one folder per module
 docs/                event schema and design notes
