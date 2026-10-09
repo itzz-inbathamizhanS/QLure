@@ -1,0 +1,50 @@
+# Q-Lure stack. Phase 0: the web portal decoy behind the gateway.
+# Decoys sit only on `decoynet` (internal: no internet access). The gateway is the
+# single container that also joins `edge`, so visitors can reach the decoys.
+
+services:
+  gateway:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8080:8080"   # web portal decoy
+    networks:
+      edge: {}
+      decoynet:
+        ipv4_address: 172.30.0.2
+    depends_on: [web]
+    user: "101:101"   # nginx user; no root needed for port 8080
+    read_only: true
+    tmpfs: ["/tmp:uid=101,gid=101"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 128m
+    cpus: 0.5
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: decoys/web/Dockerfile
+    volumes:
+      - ./logs:/var/log/qlure
+    networks:
+      decoynet:
+        ipv4_address: 172.30.0.10
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    restart: unless-stopped
+
+networks:
+  edge: {}
+  decoynet:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24

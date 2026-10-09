@@ -1,0 +1,4 @@
+# Every planted secret in the decoys, with a unique id. All values are FAKE.
+# Phase 1 fills this in (AWS-style key and DB password in /.env, SSH password in
+# /backup/config.bak, API key in the fake ~/.bash_history).
+honeytokens: []

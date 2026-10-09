@@ -1,0 +1,285 @@
+{
+  "$defs": {
+    "Action": {
+      "enum": [
+        "connect",
+        "banner",
+        "http_request",
+        "login_attempt",
+        "login_success",
+        "command",
+        "file_read",
+        "api_call",
+        "honeytoken_use",
+        "disconnect"
+      ],
+      "title": "Action",
+      "type": "string"
+    },
+    "Credential": {
+      "additionalProperties": false,
+      "description": "A username/password pair exactly as the visitor typed it.",
+      "properties": {
+        "username": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Username"
+        },
+        "password": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Password"
+        }
+      },
+      "title": "Credential",
+      "type": "object"
+    },
+    "Service": {
+      "enum": [
+        "web",
+        "api",
+        "ssh",
+        "ftp",
+        "mysql",
+        "redis"
+      ],
+      "title": "Service",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One thing a visitor did to one decoy.",
+  "properties": {
+    "event_id": {
+      "description": "Unique id, assigned by emit().",
+      "title": "Event Id",
+      "type": "string"
+    },
+    "ts": {
+      "description": "UTC time the decoy saw the event, assigned by emit().",
+      "format": "date-time",
+      "title": "Ts",
+      "type": "string"
+    },
+    "replay_ts": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Original timestamp when the event came from `qlure replay`.",
+      "title": "Replay Ts"
+    },
+    "service": {
+      "$ref": "#/$defs/Service"
+    },
+    "src_ip": {
+      "description": "Visitor IP address as seen by the decoy.",
+      "title": "Src Ip",
+      "type": "string"
+    },
+    "src_port": {
+      "anyOf": [
+        {
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Src Port"
+    },
+    "client_fp": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Client fingerprint (e.g. hash of HTTP headers or SSH KEXINIT).",
+      "title": "Client Fp"
+    },
+    "session_id": {
+      "description": "Decoy-level session (cookie, connection).",
+      "minLength": 1,
+      "title": "Session Id",
+      "type": "string"
+    },
+    "actor_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Filled in by the correlation engine.",
+      "title": "Actor Id"
+    },
+    "action": {
+      "$ref": "#/$defs/Action"
+    },
+    "request": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Request"
+    },
+    "response": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Response"
+    },
+    "credential": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Credential"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "honeytoken_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Honeytoken Id"
+    },
+    "rule_hits": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Rule Hits",
+      "type": "array"
+    },
+    "prev_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Hash chain link, set by the store.",
+      "title": "Prev Hash"
+    },
+    "hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "SHA-256 of this event, set by the store.",
+      "title": "Hash"
+    },
+    "kex_offered": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "SSH only: client KEX list.",
+      "title": "Kex Offered"
+    },
+    "kex_fp": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "SSH only: short hash of kex_offered.",
+      "title": "Kex Fp"
+    },
+    "pqc_capable": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "SSH only: client offers a post-quantum KEX. Context only.",
+      "title": "Pqc Capable"
+    }
+  },
+  "required": [
+    "event_id",
+    "ts",
+    "service",
+    "src_ip",
+    "session_id",
+    "action"
+  ],
+  "title": "Q-Lure event",
+  "type": "object",
+  "$id": "https://github.com/itzz-inbathamizhanS/QLure/docs/event.schema.json"
+}

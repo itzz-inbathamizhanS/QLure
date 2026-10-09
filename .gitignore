@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.env
+
+# Decoy output holds visitor IPs and typed text: never commit it.
+logs/
+# Raw captures stay local; only labels and pseudonymised exports are committed.
+captures/**/raw/
+captures/**/*.jsonl
+captures/**/*.pcap
+!captures/**/labels*.jsonl
