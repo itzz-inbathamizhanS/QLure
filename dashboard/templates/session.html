@@ -18,6 +18,17 @@
   {% endif %}
 </div>
 
+<div class="panel">
+  <h2>Model second opinion</h2>
+  {% if s.ml_score is not none %}
+  <p>{{ s.ml_why }}</p>
+  {% if s.disagrees %}<p class="banner">The model and the rules disagree about this session. Look at it yourself.</p>{% endif %}
+  <p class="muted">The model learned from labelled captures. It never changes the verdict or the score.</p>
+  {% else %}
+  <p class="muted">No model trained yet. Train one from labelled tuning captures with <code>qlure ml train captures/tuning</code>.</p>
+  {% endif %}
+</div>
+
 {% if s.hits %}
 <div class="cards">
   {% for h in s.hits %}

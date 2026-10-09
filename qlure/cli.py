@@ -18,6 +18,7 @@ from qlure import evaluate as evaluation
 from qlure import replay as replay_requests
 from qlure.correlate import store as correlate_store
 from qlure.events import Event, json_schema
+from qlure.ml import model as ml_model
 from qlure.pqc import signing
 from qlure.store import db, forwarder
 from qlure.store.verify import verify
@@ -166,8 +167,35 @@ def _replay(args: argparse.Namespace) -> int:
     return 1 if summary.failed else 0
 
 
+def _ml(args: argparse.Namespace) -> int:
+    if "heldout" in {part.lower() for part in args.folder.resolve().parts}:
+        print(
+            "ml: train on tuning captures only; held-out data stays for evaluation", file=sys.stderr
+        )
+        return 1
+    _, _, rows, _ = evaluation.labelled(args.folder)
+    runs = {run.meta["run_id"] for run in evaluation.load_runs(args.folder)}
+    try:
+        model = ml_model.train(
+            [f.session for f, _, _ in rows],
+            [int(label == "malicious") for _, label, _ in rows],
+            sorted(runs),
+        )
+    except ml_model.NotEnoughData as exc:
+        print(f"ml: {exc}", file=sys.stderr)
+        return 1
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(model.to_json(), encoding="utf-8")
+    print(f"trained on {model.meta['sessions']} sessions from {len(runs)} runs; wrote {args.out}")
+    return 0
+
+
 def _eval(args: argparse.Namespace) -> int:
-    report = evaluation.evaluate(args.folder)
+    model = ml_model.load(args.model) if args.model else None
+    if args.model and model is None:
+        print(f"eval: no usable model at {args.model}", file=sys.stderr)
+        return 1
+    report = evaluation.evaluate(args.folder, model)
     print(evaluation.render(report))
     if args.json:
         args.json.write_text(json.dumps(report, indent=2), encoding="utf-8")
@@ -229,9 +257,16 @@ def main(argv: list[str] | None = None) -> int:
     p_rep.add_argument("--api", default="http://127.0.0.1:8081")
     p_rep.set_defaults(func=_replay)
 
+    p_ml = sub.add_parser("ml", help="train the learned second-opinion model on tuning captures")
+    p_ml.add_argument("action", choices=["train"])
+    p_ml.add_argument("folder", type=Path)
+    p_ml.add_argument("--out", type=Path, default=ml_model.DEFAULT_PATH)
+    p_ml.set_defaults(func=_ml)
+
     p_eval = sub.add_parser("eval", help="precision, recall and more on labelled captures")
     p_eval.add_argument("folder", type=Path)
     p_eval.add_argument("--json", type=Path, help="also write the report as JSON")
+    p_eval.add_argument("--model", type=Path, help="also score the learned model (model.json)")
     p_eval.add_argument("--strict", action="store_true", help="exit 1 unless every target is met")
     p_eval.set_defaults(func=_eval)
 

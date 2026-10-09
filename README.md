@@ -9,7 +9,7 @@ shows the investigator why a session was flagged.
 
 ## Status
 
-Phases 0 to 6 are in place:
+Phases 0 to 6 plus a learned second opinion are in place:
 
 - Event schema in `qlure/events/` (Pydantic), exported to `docs/event.schema.json`, and `emit(event)`,
   the one helper every decoy uses to validate and append events to `logs/<service>.jsonl`.
@@ -47,6 +47,16 @@ Phases 0 to 6 are in place:
   runs or held-out data from people outside the team have been recorded yet, so there are no
   reportable precision or recall numbers yet.
 
+- A learned second opinion (`qlure/ml/`): a small logistic-regression model, written in plain
+  Python with no randomness, trained on sessions you labelled (`qlure ml train captures/tuning`).
+  It looks at behaviour only (counts, rates, ratios; no tool names or addresses) and gives each
+  session a score and its three biggest factors, shown in the dashboard next to the rules. It never
+  changes a verdict or a score. A "disagrees" mark appears when the rules and the model point
+  opposite ways. Training refuses fewer than 10 sessions or fewer than 3 of either kind, and refuses
+  any folder named `heldout`. `qlure eval <folder> --model data/model.json` scores the model on the
+  same labels and marks the result NOT VALID if any of those runs were in its training data.
+  No model ships with the repo: none can exist until real labelled captures do. There is no
+  generative AI here on purpose, so explanations stay the same every time and nothing needs internet.
 - Post-quantum extras:
   - The SSH decoy reads each client's key-exchange offer and logs `kex_offered`, `kex_fp` and
     `pqc_capable` on connect and login events, and uses the client's version line as `client_fp`.

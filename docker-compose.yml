@@ -124,6 +124,7 @@ services:
       QLURE_DB: /var/lib/qlure/qlure.db
       QLURE_LOGS: /var/log/qlure
       QLURE_SETTINGS: /var/lib/qlure/settings.json
+      QLURE_MODEL: /var/lib/qlure/model.json
       QLURE_CONTENT: /runtime/content.json
       QLURE_DASHBOARD_PASSWORD: ${QLURE_DASHBOARD_PASSWORD:-}
     ports:

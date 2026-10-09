@@ -88,7 +88,11 @@ def _explains_everything(finding: Finding) -> bool:
     )
 
 
-def evaluate(root: Path) -> dict[str, Any]:
+def labelled(root: Path) -> tuple[list[Run], dict[str, Run], list[tuple[Finding, str, Any]], int]:
+    """Correlate every run in `root` and attach a label to each session.
+
+    Returns (runs, event_id -> run, [(finding, label, label entry)], mixed-label session count).
+    """
     runs = load_runs(root)
     events: dict[str, Event] = {}
     run_of: dict[str, Run] = {}
@@ -97,7 +101,6 @@ def evaluate(root: Path) -> dict[str, Any]:
             events[event.event_id] = event
             run_of[event.event_id] = run
     result = correlate(list(events.values()))
-    noteworthy = load_config()["verdicts"]["noteworthy"]
 
     session_labels: dict[str, dict[str, Any]] = {}
     for run in runs:
@@ -119,6 +122,14 @@ def evaluate(root: Path) -> dict[str, Any]:
             label = "malicious" if "malicious" in labels else "benign"
             mixed += len(labels) > 1
         rows.append((finding, label, entry))
+
+    return runs, run_of, rows, mixed
+
+
+def evaluate(root: Path, model: Any = None) -> dict[str, Any]:
+    runs, run_of, rows, mixed = labelled(root)
+    events = {e.event_id: e for run in runs for e in run.events}
+    noteworthy = load_config()["verdicts"]["noteworthy"]
 
     tp = sum(1 for f, label, _ in rows if label == "malicious" and f.verdict == "Noteworthy")
     fn = sum(1 for f, label, _ in rows if label == "malicious" and f.verdict != "Noteworthy")
@@ -177,6 +188,7 @@ def evaluate(root: Path) -> dict[str, Any]:
         "explanation_quality": _ratio(explained, len(flagged)),
     }
     return {
+        "model": _model_report(model, runs, rows),
         "root": str(root),
         "runs": len(runs),
         "events": len(events),
@@ -186,6 +198,45 @@ def evaluate(root: Path) -> dict[str, Any]:
         "metrics": metrics,
         "targets": {k: _meets(k, metrics[k]) for k in TARGETS},
         "misses": misses,
+    }
+
+
+def _model_report(model: Any, runs: list[Run], rows: list[Any]) -> dict[str, Any] | None:
+    """How the learned model does on the same labelled sessions, or None without a model."""
+    if model is None:
+        return None
+    seen = {run.meta["run_id"] for run in runs}
+    overlap = sorted(set(model.meta.get("run_ids", [])) & seen)
+    tp = fp = fn = tn = 0
+    disagreements = []
+    for finding, label, _ in rows:
+        flagged = model.probability(finding.session) >= 0.5
+        malicious = label == "malicious"
+        tp += flagged and malicious
+        fp += flagged and not malicious
+        fn += (not flagged) and malicious
+        tn += (not flagged) and not malicious
+        if flagged != (finding.verdict == "Noteworthy"):
+            disagreements.append(
+                {
+                    "session_id": finding.session.session_id,
+                    "label": label,
+                    "rules": finding.verdict,
+                    "model": round(model.probability(finding.session), 2),
+                }
+            )
+    precision, recall = _ratio(tp, tp + fp), _ratio(tp, tp + fn)
+    f1 = None
+    if precision is not None and recall is not None and precision + recall:
+        f1 = 2 * precision * recall / (precision + recall)
+    return {
+        "valid": not overlap,
+        "trained_on_runs_seen_again": overlap,
+        "confusion": {"tp": tp, "fn": fn, "fp": fp, "tn": tn},
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "disagreements_with_rules": disagreements,
     }
 
 
@@ -232,6 +283,23 @@ def render(report: dict[str, Any]) -> str:
         status = f"[{report['targets'][key]}]" if key in TARGETS else ""
         goal = f"target {target}" if target else ""
         lines.append(f"{label:<22} {shown:>13}   {goal:<22} {status}".rstrip())
+    mod = report.get("model")
+    if mod:
+        c2 = mod["confusion"]
+        lines += [
+            "",
+            "Learned model (second opinion, flags at 50% or more):",
+            f"  caught {c2['tp']}, missed {c2['fn']}, false alarms {c2['fp']}, "
+            f"correct benign {c2['tn']}",
+            f"  precision {_fmt(mod['precision'])}   recall {_fmt(mod['recall'])}   "
+            f"F1 {_fmt(mod['f1'])}",
+            f"  disagrees with the rules on {len(mod['disagreements_with_rules'])} sessions",
+        ]
+        if not mod["valid"]:
+            lines.append(
+                f"  NOT VALID: {len(mod['trained_on_runs_seen_again'])} of these runs were in the "
+                "training data; evaluate on held-out runs only"
+            )
     if report["mixed_label_sessions"]:
         lines += [
             "",

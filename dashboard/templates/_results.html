@@ -3,7 +3,7 @@
 <table>
   <thead><tr>
     <th>Verdict</th><th>Score</th><th>Actor</th><th>Service</th><th>Source</th>
-    <th>Client</th><th>Rules</th><th>Started</th><th>Review</th>
+    <th>Client</th><th>Rules</th><th>Model</th><th>Started</th><th>Review</th>
   </tr></thead>
   <tbody>
   {% for r in rows %}
@@ -15,6 +15,7 @@
     <td>{{ r.src_ip }}</td>
     <td>{{ r.agent }}</td>
     <td>{{ r.rules|join(', ') }}</td>
+    <td>{% if r.ml_score is not none %}{{ '%.0f' % (r.ml_score * 100) }}%{% if r.disagrees %} <span class="badge">disagrees</span>{% endif %}{% else %}<span class="muted">no model</span>{% endif %}</td>
     <td>{{ r.first_seen }}</td>
     <td><a href="/session/{{ r.session_id }}">Open</a> <span class="muted">{{ r.label }}</span></td>
   </tr>

@@ -7,6 +7,7 @@ import sqlite3
 
 from qlure.correlate.engine import Result, correlate
 from qlure.events import Event
+from qlure.ml import model as ml_model
 
 
 def load_events(conn: sqlite3.Connection) -> list[Event]:
@@ -42,6 +43,7 @@ def save(conn: sqlite3.Connection, result: Result) -> None:
                 json.dumps(s.event_ids),
             ),
         )
+    model = ml_model.load()  # None until someone trains one; the rules work without it
     for f in result.findings:
         hits = [
             {
@@ -58,7 +60,7 @@ def save(conn: sqlite3.Connection, result: Result) -> None:
             for h in f.hits
         ]
         conn.execute(
-            "INSERT INTO findings VALUES (?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO findings VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (
                 f.session.session_id,
                 f.actor_id,
@@ -69,6 +71,8 @@ def save(conn: sqlite3.Connection, result: Result) -> None:
                 json.dumps(hits),
                 json.dumps(f.suppressors),
                 f.explanation,
+                round(model.probability(f.session), 4) if model else None,
+                model.explain(f.session) if model else None,
             ),
         )
     conn.commit()
