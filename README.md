@@ -39,7 +39,15 @@ Roadmap phases 0 to 4 are in place except P4.5 (the hosted snapshot rebuild). Ta
 - A dashboard on `http://127.0.0.1:9000` (`dashboard/`): sessions list with filters and sorting,
   a session page with the explanation, rule cards, an evidence timeline (raw events and hashes),
   review labels, a JSON evidence export that carries the hash-chain check, and a printable report.
-  The dashboard also has:
+  A settings page (`qlure/settings.py`) allows only safe changes: approved ports, fake content,
+  scoring weights and an allowlist. Every change, accepted or refused, is audited and can be undone.
+  There is no setting for outbound network, command execution, executable uploads or host folders.
+  Judge mode makes settings, labels and Clear All read-only and pauses the live pass; Re-run
+  correlation and the downloads still work. Rule weights, thresholds and the allowlist apply at once,
+  and the company name and FTP banner reach the web and FTP decoys through one small read-only
+  file (`runtime/content.json`). Port and enable settings are saved and audited but a restart of
+  the decoys is still needed: the dashboard has no control over Docker, on purpose.
+- Dashboard additions:
   - a **live feed** on the sessions list: a background correlation pass every `QLURE_LIVE_INTERVAL`
     seconds (default 10, `QLURE_LIVE=0` turns it off) and a Live indicator. It only correlates; new
     events reach the store through the forwarder;
@@ -51,14 +59,6 @@ Roadmap phases 0 to 4 are in place except P4.5 (the hosted snapshot rebuild). Ta
   - `/healthz` (public JSON: store check and counts) and `/metrics` (Prometheus text, login
     required unless `QLURE_METRICS_PUBLIC=1`);
   - a dark and light theme toggle in the sidebar, saved in the browser.
-  A settings page (`qlure/settings.py`) allows only safe changes: approved ports, fake content,
-  scoring weights and an allowlist. Every change, accepted or refused, is audited and can be undone.
-  There is no setting for outbound network, command execution, executable uploads or host folders.
-  Judge mode makes settings, labels and Clear All read-only and pauses the live pass; Re-run
-  correlation and the downloads still work. Rule weights, thresholds and the allowlist apply at once,
-  and the company name and FTP banner reach the web and FTP decoys through one small read-only
-  file (`runtime/content.json`). Port and enable settings are saved and audited but a restart of
-  the decoys is still needed: the dashboard has no control over Docker, on purpose.
 
 - Capture, replay and evaluation tools (`qlure capture`, `qlure replay`, `qlure eval`), described
   below. They are built and tested on a tiny capture recorded from the real decoys. No attack-tool

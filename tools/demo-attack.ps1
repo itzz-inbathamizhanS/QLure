@@ -33,7 +33,7 @@ function Show-Menu {
     Write-Host "8) Path traversal probe  - read a file outside the web root"
     Write-Host "9) Scanner user agent    - same page, with a scanner's browser string"
     Write-Host "10) Show cmd.exe curl commands for the audience"
-    Write-Host "11) FTP banner probe     - logged; scored after roadmap task P1.4"
+    Write-Host "11) FTP login attempts   - three failed FTP logins (logged; default pairs such as admin:admin fire R4)"
     Write-Host "12) Database Probes      - probe MySQL and Redis ports"
     Write-Host "A) Run All Automated     - runs 1, 2, 3, 7, 8, 9, 11, 12 in one go"
     Write-Host "0) Exit"
@@ -123,14 +123,14 @@ function Step-Scanner {
 }
 
 function Step-FtpBanner {
-    Write-Host "`n[FTP banner probe] connecting to the FTP decoy (port 2121) three times" -ForegroundColor Cyan
+    Write-Host "`n[FTP login attempts] connecting to the FTP decoy (port 2121) three times" -ForegroundColor Cyan
     $passwords = @("admin", "12345", "root")
     foreach ($pw in $passwords) {
         Write-Host "  Sending admin:$pw"
         curl.exe -s -o NUL "ftp://admin:$pw@127.0.0.1:2121/"
         Start-Sleep -Milliseconds 150
     }
-    Write-Host "Done. The FTP traffic is logged, but no rule scores it yet: FTP login attempts are only recorded after roadmap task P1.4." -ForegroundColor Yellow
+    Write-Host "Done. Each attempt is logged as a login attempt and always fails (530). A default pair such as admin:admin fires R4; repeated failures across services add to R3." -ForegroundColor Yellow
 }
 
 function Step-MySqlRedis {
