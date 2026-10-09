@@ -14,8 +14,8 @@ Each session is scored by the rules defined in `qlure/rules/rules.yaml`. A rule 
 | **R2** | Path enumeration | recon | 25 | medium | Many distinct 404 paths, or a known scanner path such as `/wp-login.php` or `/.git` |
 | **R3** | Brute force | credential | 30 | medium | Many failed logins, or many different usernames tried |
 | **R4** | Default credentials | credential | 15 | low | A default username and password pair, such as `admin` / `admin` |
-| **R5** | Injection payload | exploit | 40 | high | SQL injection or similar patterns in a request |
-| **R6** | Scanner tool | recon | 15 | medium | A scanner user agent, or a banner grab with no follow-up |
+| **R5** | Injection payload | exploit | 40 | high | SQL injection or similar patterns in a request. Kinds: `sqli`, `xss`, `traversal`, `command_injection`, `log4shell` (`${jndi:` incl. `${${lower:j}ndi:` obfuscation), `shellshock` (`() { :;};`), `spring4shell` (`class.module.classLoader`), `ssrf` (169.254.169.254, metadata.google.internal, `gopher://`, `file://`), `webshell` (`<?php`, `<?=`, `eval(base64_decode`). The finding lists every kind seen. Text only is matched, nothing is executed or fetched |
+| **R6** | Scanner tool | recon | 15 | medium | A scanner user agent (sqlmap, nikto, nmap, wpscan, feroxbuster, whatweb, httpx and others, case-insensitive substring), or a banner grab with no follow-up |
 | **R7** | Honeytoken use | misuse | 60 | high | A planted fake secret is used, such as the API key or SSH password |
 | **R8** | Post-login discovery | misuse | 35 | high | After SSH login: several discovery commands, or a download or persistence command |
 | **R9** | Sensitive file access | misuse | 25 | medium | A sensitive file is read, such as `.env` or `config.bak` |

@@ -40,7 +40,7 @@ rules:
     confidence: high
     attack: [T1190]
     threshold: {matches: 1}
-    threshold_text: "any SQLi, XSS, traversal or command-injection pattern"
+    threshold_text: "any SQLi, XSS, traversal, command-injection, Log4Shell, Shellshock, Spring4Shell, SSRF or web-shell pattern"
   R6:
     name: Scanner tool
     family: recon
@@ -117,7 +117,7 @@ lists:
     - [guest, guest]
     - [ubuntu, ubuntu]
   scanner_agents:
-    [sqlmap, nikto, nmap, gobuster, dirbuster, dirb, hydra, wfuzz, ffuf, masscan, zgrab, nuclei, acunetix, nessus, openvas]
+    [sqlmap, nikto, nmap, gobuster, dirbuster, dirb, hydra, wfuzz, ffuf, masscan, zgrab, nuclei, acunetix, nessus, openvas, wpscan, feroxbuster, whatweb, httpx]
   scanner_paths:
     - /wp-admin
     - /wp-login.php
@@ -162,3 +162,20 @@ lists:
     command_injection:
       - "(?i)[;|&`]\\s*(cat|ls|id|whoami|wget|curl|nc|bash|sh)\\b"
       - "\\$\\([^)]*\\)"
+    # Pattern matching only: nothing here is ever executed or fetched.
+    log4shell:
+      - "(?i)\\$\\{(?:j|\\$\\{[^{}]*j[^{}]*\\})(?:n|\\$\\{[^{}]*n[^{}]*\\})(?:d|\\$\\{[^{}]*d[^{}]*\\})(?:i|\\$\\{[^{}]*i[^{}]*\\})(?::|\\$\\{[^{}]*:[^{}]*\\})"
+    shellshock:
+      - "\\(\\s*\\)\\s*\\{\\s*:\\s*;\\s*\\}\\s*;"
+    spring4shell:
+      - "(?i)\\bclass\\.module\\.classloader\\b"
+      - "(?i)\\bclass\\.classloader\\.(?:resources|urls)\\b"
+    ssrf:
+      - "169\\.254\\.169\\.254"
+      - "(?i)metadata\\.google\\.internal"
+      - "(?i)\\bgopher://"
+      - "(?i)\\bfile://"
+    webshell:
+      - "(?i)<\\?php"
+      - "<\\?="
+      - "(?i)\\beval\\s*\\(\\s*base64_decode"

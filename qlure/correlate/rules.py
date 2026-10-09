@@ -151,11 +151,13 @@ def r5_injection(session: Session) -> RuleHit | None:
         if event.action.value != "http_request":
             continue
         text = _scan_text(event)
+        kinds_here: set[str] = set()
         for kind, pattern in _injection():
             if pattern.search(text):
-                matched.append(event)
-                kinds.add(kind)
-                break
+                if not kinds_here:
+                    matched.append(event)
+                kinds_here.add(kind)
+        kinds |= kinds_here
     if not matched:
         return None
     return _hit("R5", f"{'/'.join(sorted(kinds))} pattern in {len(matched)} request(s)", matched)
