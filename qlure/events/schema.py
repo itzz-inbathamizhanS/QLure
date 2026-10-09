@@ -33,6 +33,7 @@ class Service(StrEnum):
     FTP = "ftp"
     MYSQL = "mysql"
     REDIS = "redis"
+    DOCKER = "docker"
 
 
 class Credential(BaseModel):

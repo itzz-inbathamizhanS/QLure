@@ -27,11 +27,12 @@ services:
       - "127.0.0.1:2121:2121"   # FTP banner
       - "127.0.0.1:3306:3306"   # MySQL banner
       - "127.0.0.1:6379:6379"   # Redis banner
+      - "127.0.0.1:2375:2375"   # fake Docker Engine API
     networks:
       edge: {}
       decoynet:
         ipv4_address: 172.30.0.2
-    depends_on: [web, api, ssh, banners]
+    depends_on: [web, api, ssh, banners, dockerapi]
     user: "101:101"
     read_only: true
     tmpfs: ["/tmp:uid=101,gid=101"]
@@ -80,6 +81,7 @@ services:
     command: python -m decoys.ssh.server
     environment:
       QLURE_SSH_HOST_KEY: /var/lib/qlure-ssh/host_key   # same host key after a restart
+      QLURE_BIND_HOST: 0.0.0.0   # inside the internal decoy network; Docker publishes on 127.0.0.1 only
     volumes:
       - ./logs:/var/log/qlure
       - ./data/ssh:/var/lib/qlure-ssh
@@ -94,6 +96,7 @@ services:
     <<: *decoy
     environment:
       QLURE_CONTENT: /runtime/content.json
+      QLURE_BIND_HOST: 0.0.0.0
     volumes:
       - ./logs:/var/log/qlure
       - ./runtime:/runtime:ro
@@ -105,7 +108,20 @@ services:
     cpus: 0.5
     pids_limit: 64
 
-  # Watchdogs (one per decoy; egress-watch-api/ssh/banners below mirror this): join the web decoy's network namespace, reads /proc/net only, and alerts on any
+  dockerapi:
+    <<: *decoy
+    command: >
+      uvicorn decoys.dockerapi.app:app --host 0.0.0.0 --port 2375 --no-server-header
+      --proxy-headers --forwarded-allow-ips 172.30.0.2
+      --limit-concurrency 100 --timeout-keep-alive 5
+    networks:
+      decoynet:
+        ipv4_address: 172.30.0.14
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+
+  # Watchdogs (one per decoy; egress-watch-api/ssh/banners/dockerapi below mirror this): join the web decoy's network namespace, reads /proc/net only, and alerts on any
   # connection the decoy opens itself. Writes to data/, which the forwarder never reads.
   egress-watch:
     <<: *decoy
@@ -149,6 +165,18 @@ services:
       qlure watch-egress --proc-net /proc/net --out /var/lib/qlure/egress-banners.jsonl --interval 2
     network_mode: "service:banners"
     depends_on: [banners]
+    volumes:
+      - ./data:/var/lib/qlure
+    mem_limit: 64m
+    cpus: 0.1
+    pids_limit: 32
+
+  egress-watch-dockerapi:
+    <<: *decoy
+    command: >
+      qlure watch-egress --proc-net /proc/net --out /var/lib/qlure/egress-dockerapi.jsonl --interval 2
+    network_mode: "service:dockerapi"
+    depends_on: [dockerapi]
     volumes:
       - ./data:/var/lib/qlure
     mem_limit: 64m

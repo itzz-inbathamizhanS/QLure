@@ -105,6 +105,10 @@ technique_map:
     spring4shell: [T1190]
     shellshock: [T1190]
     ssrf: [T1190]
+    container_deploy: [T1610]
+    container_dropper: [T1105]
+    container_escape: [T1611]
+    container_mining: [T1496]
   # R11 Redis command -> ATT&CK IDs. A hit carries the union for the commands actually seen.
   r11_commands:
     config_set: {ids: [T1190], pattern: "^\\s*config\\s+set\\b"}
@@ -239,6 +243,20 @@ lists:
       - "(?i)metadata\\.google\\.internal"
       - "(?i)\\bgopher://"
       - "(?i)\\bfile://"
+    # Exposed Docker API (docker decoy): deploying a container, mounting the host, mining.
+    container_deploy:
+      - "(?i)/(?:containers|images)/create\\b"
+      - "(?i)/containers/[^/\\s]+/exec\\b"
+    container_dropper:
+      - '(?i)"(?:Cmd|Entrypoint)"\s*:\s*\[[^\]]{0,2000}?\b(?:wget|curl)\b[^\]]{0,500}?https?://'
+      - '(?i)"(?:Cmd|Entrypoint)"\s*:\s*\[[^\]]{0,2000}?\bchmod\s+\+?[0-7x]+\b'
+    container_escape:
+      - '(?i)"Privileged"\s*:\s*true'
+      - '(?i)"Binds"\s*:\s*\[\s*"/[^":]*:'
+      - '(?i)"(?:PidMode|NetworkMode)"\s*:\s*"host"'
+    container_mining:
+      - '(?i)"(?:Image|Cmd|Entrypoint)"\s*:[^}]{0,1000}?(?:xmrig|minerd|stratum\+tcp)'
+      - '(?i)fromImage=[^&\s]*(?:xmrig|minerd)'
     webshell:
       - "(?i)<\\?php"
       - "<\\?="

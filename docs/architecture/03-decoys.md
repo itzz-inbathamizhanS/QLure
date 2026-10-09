@@ -21,6 +21,7 @@ can be changed from the dashboard settings page (see [page 6](06-dashboard-and-s
 | FTP banner | 2121 | `banners` | FTP | A greeting, then a short login dialogue | `connect`, `banner`, `login_attempt`, `honeytoken_use` |
 | MySQL banner | 3306 | `banners` | MySQL | A server greeting, then a short login dialogue | `connect`, `banner`, `login_attempt` |
 | Redis banner | 6379 | `banners` | Redis | No greeting; fixed replies to a short command dialogue | `connect`, `banner`, `login_attempt`, `honeytoken_use`, `command` |
+| Docker Engine API | 2375 | `dockerapi` | HTTP | Fixed Docker 24.0.7 JSON; create, pull and exec return a success with a FAKE id and run nothing | `http_request` (body capped at 2 KB) |
 
 ## Web portal (`decoys/web/app.py`)
 
@@ -138,3 +139,19 @@ not trigger R7. They show up when a visitor reads them, and reading sensitive pa
 | `decoys/fakefs/fs.yaml` | The SSH shell's fake file tree, also served by `/download` |
 | `decoys/web/templates/` | Fixed text for robots, git, phpMyAdmin and error pages |
 | `decoys/*/README.md` | One-line owner notes per decoy |
+
+## Docker API (`decoys/dockerapi/app.py`)
+
+A plain-HTTP fake of an exposed Docker daemon. `GET /_ping`, `/version`, `/info`, `/containers/json`
+and `/images/json` (also under `/v1.43/`) return fixed JSON; `POST /containers/create`,
+`/images/create`, `/containers/<id>/start`, `/containers/<id>/exec` and `/exec/<id>/start` return a
+success with an id that is a hash of the request, so a miner dropper keeps talking. Nothing is
+executed, pulled or stored. Everything else gets `{"message":"page not found"}`. Rule R5 labels
+container deploys (T1610), host mounts and privileged containers (T1611), miners (T1496) and
+droppers (T1105); no weight or verdict changed.
+
+## Bind address
+
+`python -m decoys.ssh.server` and `python -m decoys.banners.listeners` bind `QLURE_BIND_HOST`
+(or `--host`), default `0.0.0.0` for Docker. Set `QLURE_BIND_HOST=127.0.0.1` for a local run. Start
+the uvicorn decoys with `--host 127.0.0.1`.

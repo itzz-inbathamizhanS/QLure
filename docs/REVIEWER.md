@@ -8,8 +8,8 @@ scored by eleven readable rules (R1 to R11), and shown on a dashboard with their
 decoys execute nothing: the fake shell only records text, and database and Redis replies are fixed.
 The demo sends traffic only to `127.0.0.1`, from documentation addresses (198.51.100.x, 203.0.113.x).
 Docker publishes every port on `127.0.0.1` only. Started directly with Python, the web and API
-servers listen on localhost, but the SSH and banner listeners bind `0.0.0.0`: run them only on a
-network you trust, and stop them after the run.
+servers listen on localhost; the SSH and banner listeners bind `0.0.0.0` unless you set
+`QLURE_BIND_HOST=127.0.0.1` (or pass `--host 127.0.0.1`), as the commands below do.
 
 ## Fastest path (no Docker, sample data)
 
@@ -31,10 +31,11 @@ Open http://127.0.0.1:9100 and log in with your password. The seed generates the
 Start the decoys in four terminals from the repository root. Events go to `logs/`.
 
 ```bash
-python -m uvicorn decoys.web.app:app --port 8080
-python -m uvicorn decoys.api.app:app --port 8081
-python -m decoys.ssh.server          # port 2222
-python -m decoys.banners.listeners   # ports 2121, 3306, 6379 (3306 and 6379 must be free)
+python -m uvicorn decoys.web.app:app --host 127.0.0.1 --port 8080
+python -m uvicorn decoys.api.app:app --host 127.0.0.1 --port 8081
+QLURE_BIND_HOST=127.0.0.1 python -m decoys.ssh.server          # port 2222
+QLURE_BIND_HOST=127.0.0.1 python -m decoys.banners.listeners   # ports 2121, 3306, 6379 (3306 and 6379 must be free)
+python -m uvicorn decoys.dockerapi.app:app --host 127.0.0.1 --port 2375   # optional fake Docker API
 ```
 
 In a fifth terminal, send the 13 labelled steps, then score them:

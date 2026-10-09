@@ -7,6 +7,7 @@ before it connects, so every SSH session carries the right source address.
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import os
 import socket
@@ -26,6 +27,7 @@ from qlure.pqc.kex import KexSniffer, kex_fingerprint, pqc_capable
 
 LISTEN_PORT = 2222
 BACKEND_PORT = 2223
+OUTPUT_PREVIEW_CHARS = 2048  # enough for the dashboard playback to show real output
 HOST_VERSION = "OpenSSH_9.6p1 Ubuntu-3ubuntu13.5"
 # Offered first so the decoy looks current: the key exchange recent OpenSSH prefers.
 PREFERRED_KEX = ("mlkem768x25519-sha256", "sntrup761x25519-sha512@openssh.com")
@@ -139,7 +141,7 @@ async def _process(process: asyncssh.SSHServerProcess) -> None:
             server._emit(
                 Action.COMMAND,
                 request={"command": line},
-                response={"output_preview": output[:256]},
+                response={"output_preview": output[:OUTPUT_PREVIEW_CHARS]},
             )
 
     await run_session(process, state, record)
@@ -215,11 +217,17 @@ def host_key() -> asyncssh.SSHKey:
     return key
 
 
+def bind_host() -> str:
+    """Address the relay listens on: QLURE_BIND_HOST, default all interfaces (Docker)."""
+    return os.environ.get("QLURE_BIND_HOST") or "0.0.0.0"  # noqa: S104
+
+
 async def serve(
     listen_port: int = LISTEN_PORT,
     backend_port: int = BACKEND_PORT,
-    host: str = "0.0.0.0",  # noqa: S104
+    host: str | None = None,
 ) -> None:
+    host = host or bind_host()
     key = host_key()
     backend = await asyncssh.create_server(
         DecoySSHServer,
@@ -241,4 +249,8 @@ async def serve(
 
 
 if __name__ == "__main__":
-    asyncio.run(serve())
+    parser = argparse.ArgumentParser(description="Q-Lure SSH decoy")
+    parser.add_argument(
+        "--host", default=None, help="bind address (default: QLURE_BIND_HOST or 0.0.0.0)"
+    )
+    asyncio.run(serve(host=parser.parse_args().host))

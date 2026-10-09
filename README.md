@@ -15,7 +15,7 @@ Phases 0 to 6 plus a learned second opinion are in place:
   the one helper every decoy uses to validate and append events to `logs/<service>.jsonl`.
 - Six decoys, all behind one nginx gateway on an `internal: true` network:
   web portal (8080), REST API (8081), SSH-like server with a fake shell (2222),
-  and FTP / MySQL / Redis listeners (2121, 3306, 6379). The FTP, MySQL and Redis listeners run
+  a fake Docker Engine API (2375) and FTP / MySQL / Redis listeners (2121, 3306, 6379). The FTP, MySQL and Redis listeners run
   short bounded dialogues (at most 8 commands, 10 seconds) and log login attempts and commands.
 - Honeytokens (`decoys/honeytokens.yaml`): eight planted fake secrets. Some are accepted by another
   decoy: `/backup/config.bak` on the web portal gives the SSH password, the SSH shell's

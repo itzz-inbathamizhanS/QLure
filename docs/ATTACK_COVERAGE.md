@@ -2,7 +2,7 @@
 
 `tests/correlate/test_attack_coverage.py` runs one row per attack from ROADMAP section A against the
 real decoys (web and API test clients, the SSH shell, and the FTP, MySQL and Redis banner
-listeners). Each row then correlates what the decoy logged. A row checks four things:
+listeners, and the fake Docker API). Each row then correlates what the decoy logged. A row checks four things:
 
 1. The decoy replies the way the real service would (status, banner or text).
 2. The event is written to the decoy's own log, with the planted-secret ID where one is used.
@@ -20,7 +20,7 @@ turns green-to-red if the gap is fixed, so the marker must then be removed.
 python -m pytest -q tests/correlate/test_attack_coverage.py -v
 ```
 
-Current result: 45 rows pass, 2 rows are xfailed (47 total).
+Current result: 48 rows pass, 2 rows are xfailed (50 total).
 
 ## Coverage table
 
@@ -77,6 +77,9 @@ that the rule fires, because that rule alone scores below the Suspicious line.
 | Redis `MODULE LOAD` | redis | `-NOAUTH Authentication required.` | command | R11 (not R8) | T1190 | Suspicious | `redis-module-load` |
 | Redis `EVAL` | redis | `-NOAUTH Authentication required.` | command | R11 (not R8) | T1059 | Suspicious | `redis-eval` |
 | Redis AUTH with planted password, then `CONFIG SET` | redis | +OK, +OK | honeytoken_use, command | R7, R11 | T1190 | Noteworthy | `redis-planted-auth-config-set` |
+| Miner dropper: `POST containers/create` with `xmrig` image, `wget \| sh`, `Privileged`, `Binds /:/host` | docker | 201 with a fake container id | http_request | R5 | T1610, T1611, T1496, T1105, T1059.004 | Suspicious | `docker-miner-create-privileged` |
+| `POST containers/<id>/exec` | docker | 201 with a fake exec id | http_request | R5 | T1610 | Suspicious | `docker-exec` |
+| Benign: `_ping`, `/version`, `/containers/json` | docker | OK, fixed Docker 24.0.7 JSON | http_request | none | none | Benign | `docker-read-only-browsing` |
 
 Rows for the SSH shell that run post-login commands also carry R7, because the SSH decoy accepts
 only the planted password. That is why they are Noteworthy by construction.

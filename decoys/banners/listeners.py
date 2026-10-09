@@ -8,8 +8,10 @@ real visitor address.
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import itertools
+import os
 import secrets
 import string
 import struct
@@ -137,16 +139,25 @@ async def start(
     service: Service,
     port: int,
     greeting: bytes | Callable[[], bytes],
-    host: str = "0.0.0.0",  # noqa: S104
+    host: str | None = None,
 ) -> asyncio.Server:
     handler: Callable[..., object] = partial(_handle, service, greeting)
-    return await asyncio.start_server(handler, host, port)
+    return await asyncio.start_server(handler, host or bind_host(), port)
 
 
-async def main() -> None:
-    servers = [await start(service, port, greeting) for service, port, greeting in LISTENERS]
+def bind_host() -> str:
+    """Address the listeners bind: QLURE_BIND_HOST, default all interfaces (Docker)."""
+    return os.environ.get("QLURE_BIND_HOST") or "0.0.0.0"  # noqa: S104
+
+
+async def main(host: str | None = None) -> None:
+    servers = [await start(service, port, greeting, host) for service, port, greeting in LISTENERS]
     await asyncio.gather(*(server.serve_forever() for server in servers))
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(description="Q-Lure FTP, MySQL and Redis decoys")
+    parser.add_argument(
+        "--host", default=None, help="bind address (default: QLURE_BIND_HOST or 0.0.0.0)"
+    )
+    asyncio.run(main(parser.parse_args().host))
