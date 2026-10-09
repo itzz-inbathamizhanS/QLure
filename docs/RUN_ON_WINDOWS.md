@@ -210,6 +210,9 @@ python -m pytest -q                                              # needs the tes
 | `pip install` fails building `liboqs` | You used `.[dev]`; use `pip install -e ".[decoys,dashboard]"` |
 | `Address already in use` / port busy | `netstat -ano \| findstr LISTENING \| findstr ":8080"` shows the PID; `taskkill /PID <number> /F`. If the owner is Docker Desktop, run `docker compose down` instead of killing it |
 | `.venv\Scripts\activate` blocked in PowerShell | Use Command Prompt, or run `Set-ExecutionPolicy -Scope Process Bypass` first |
+| All steps say connection refused (`WinError 10061`) | The decoys are not running: start `python tools\run_live.py` first and keep that window open |
+| `run_live.py` says port 9100 is in use | `netstat -ano \| findstr :9100` shows the PID; `taskkill /PID <number> /F`, or press Ctrl+C in the old window |
+| PowerShell: `curl` and `set` do not behave | Use `curl.exe` and `$env:NAME="value"` |
 | Dashboard login rejected | The password is the value of `QLURE_DASHBOARD_PASSWORD` set in that same window before starting |
 | Dashboard shows "No data yet" | Run Path A's seed, or run `forward` and `correlate` after sending traffic |
 | `qlure` command not found | Use `python -m qlure.cli ...` as in this guide, with the environment activated |
