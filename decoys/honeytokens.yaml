@@ -13,7 +13,7 @@ honeytokens:
     kind: db_password
     value: Db!Decoy-7731
     planted_in: web /.env
-    accepted_by: none         # planted only; no decoy checks it yet
+    accepted_by: web, ftp     # a login with it on the web /login or FTP USER/PASS is honeytoken use
   - id: ht-ssh-001
     kind: ssh_password
     username: deploy

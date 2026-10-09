@@ -41,8 +41,8 @@ credential-stuffing run.
 - **Banner dialogues are short scripts.** FTP, MySQL and Redis answer a login and a few commands
   with fixed replies (rule R11 judges Redis commands), but they do not run a real protocol and
   never execute a query or store data.
-- **The database honeytoken `ht-db-001` is planted but not accepted.** Using it triggers no rule
-  beyond reading it in `/.env`.
+- **The database honeytoken `ht-db-001` is only checked on logins.** The web `/login` and FTP
+  `USER`/`PASS` record it as honeytoken use (rule R7), but there is no MySQL login that accepts it.
 - **The API accepts only the planted keys.** Other requests get fixed responses.
 - **Port settings need a manual restart.** The dashboard saves them but cannot control Docker.
 - **Dashboard port.** The README says 9000 (inside Docker). A native run chooses its own port.
