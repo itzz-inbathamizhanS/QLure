@@ -26,6 +26,25 @@
   </div>
 </section>
 
+<section class="panel" aria-labelledby="kc-h">
+  <div class="panel-head"><h2 id="kc-h">Kill chain</h2><span class="hint">recon, credential, misuse: the first event of each stage</span></div>
+  <div class="panel-body">
+    <ol class="killchain">
+    {% for st in a.kill_chain %}
+      <li class="stage stage-{{ st.stage }}{{ ' is-dim' if not st.reached }}">
+        <span class="stage-name">{{ st.label }}</span>
+        {% if st.reached %}
+        <span class="stage-state">Reached, {{ st.events }} evidence event{{ 's' if st.events != 1 }}</span>
+        <span class="mono stage-time">{% if st.first %}first at {{ st.first|when }} UTC{% else %}time not recorded{% endif %}</span>
+        {% else %}
+        <span class="stage-state">Not reached</span>
+        {% endif %}
+      </li>
+    {% endfor %}
+    </ol>
+  </div>
+</section>
+
 <div class="grid-main">
   <section class="panel" aria-labelledby="ae-h">
     <div class="panel-head"><h2 id="ae-h">Why this actor's combined verdict</h2><span class="hint">every rule hit across all its sessions, deduplicated and scored once</span></div>

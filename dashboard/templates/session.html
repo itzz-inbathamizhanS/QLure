@@ -16,6 +16,17 @@
 {% block content %}
 <div class="stack">
 
+{% if s.honeytokens %}
+<div class="callout warn honeytoken-banner"><svg class="icon"><use href="#i-key"/></svg>
+  <div>Honeytoken <span class="mono">{{ s.honeytokens|join(', ') }}</span> was used by {{ s.src_ip }} in this session, by <a class="mono" href="/actor/{{ s.actor_id }}">actor {{ s.actor_id[:12] }}</a>.</div>
+</div>
+{% endif %}
+
+<section class="panel story-panel" aria-labelledby="story-h">
+  <div class="panel-head"><h2 id="story-h">Story</h2><span class="hint">built only from this session's rule hits and events</span></div>
+  <p class="story">{{ s.story }}</p>
+</section>
+
 <section class="panel">
   <div class="hero">
     <div class="bignum v-{{ s.effective_verdict }}">{{ shown_score }}<small>OF 100</small></div>

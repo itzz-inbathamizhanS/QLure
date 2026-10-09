@@ -175,6 +175,8 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
                 options=data.filter_options(c),
                 pqc=data.pqc_share(c),
                 stats=data.overview(c),
+                # The banner belongs to the overview: a filtered list shows only its rows.
+                token_banner=None if filters else data.honeytoken_banner(c),
             )
 
     @app.get("/actors", response_class=HTMLResponse)

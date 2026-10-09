@@ -52,7 +52,8 @@ def client(env):
 
 def _session_ids(client, **params):
     html = client.get("/", params=params).text
-    return re.findall(r'href="/session/([^"]+)"', html)
+    # A session can be linked twice (its row and the honeytoken banner); list each once, in order.
+    return list(dict.fromkeys(re.findall(r'href="/session/([^"]+)"', html)))
 
 
 def test_everything_redirects_to_login_without_a_cookie(env):

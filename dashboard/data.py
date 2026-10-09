@@ -12,6 +12,17 @@ from qlure.events import Event
 
 GAP_SECONDS = 60
 FAMILY_ORDER = ["recon", "credential", "exploit", "misuse", "chain"]
+# The stages of the actor kill-chain strip: the rule families R10 counts, in order.
+KILL_CHAIN = (("recon", "Recon"), ("credential", "Credential"), ("misuse", "Misuse"))
+_LOGIN_WHERE = {
+    "ssh": "over SSH",
+    "ftp": "over FTP",
+    "mysql": "over MySQL",
+    "redis": "over Redis",
+    "web": "to the web app",
+    "api": "to the API",
+}
+_DOWNLOAD = re.compile(r"\b(?:wget|curl|tftp|scp)\b")
 
 
 def _loads(text: str | None, default: Any) -> Any:
@@ -63,6 +74,12 @@ def list_findings(conn: sqlite3.Connection, filters: dict[str, str]) -> list[dic
         sessions_per_actor[row["actor_id"]] = sessions_per_actor.get(row["actor_id"], 0) + 1
         services_per_actor.setdefault(row["actor_id"], set()).add(row["service"])
 
+    token_of = {
+        r["event_id"]: r["honeytoken_id"]
+        for r in conn.execute(
+            "SELECT event_id, honeytoken_id FROM events WHERE honeytoken_id IS NOT NULL"
+        )
+    }
     token_events: set[str] = set()
     if filters.get("honeytoken"):
         token_events = {
@@ -104,6 +121,8 @@ def list_findings(conn: sqlite3.Connection, filters: dict[str, str]) -> list[dic
                 "src_ip": row["src_ip"],
                 "agent": _first_agent(conn, event_ids)[:48],
                 "rules": rule_ids,
+                "techniques": sorted({a for h in hits for a in h["attack"]}),
+                "honeytokens": sorted({token_of[e] for e in event_ids if e in token_of}),
                 "first_seen": row["first_seen"],
                 "last_seen": row["last_seen"],
                 "label": row["label"] or "unreviewed",
@@ -204,6 +223,10 @@ def session_detail(conn: sqlite3.Connection, session_id: str) -> dict[str, Any] 
         "ml_why": row["ml_why"],
         "ml_factors": ml_factors(row["ml_why"]),
         "segments": score_segments(hits),
+        "story": session_story([e["event"] for e in events], hits),
+        "honeytokens": sorted(
+            {e["event"].honeytoken_id for e in events if e["event"].honeytoken_id}
+        ),
         "disagrees": disagrees(
             _effective(row["verdict"], row["actor_verdict"], len(hits)), row["ml_score"]
         ),
@@ -282,6 +305,151 @@ def ml_factors(ml_why: str | None) -> list[dict[str, Any]]:
         {"name": name.strip(), "value": value, "toward": toward}
         for name, value, toward in _FACTOR.findall(tail)
     ]
+
+
+def _moment(event: Event) -> datetime:
+    return event.replay_ts or event.ts
+
+
+def _plural(n: int, word: str) -> str:
+    return f"{n} {word}" if n == 1 else f"{n} {word}s"
+
+
+def session_story(events: list[Event], hits: list[dict[str, Any]]) -> str:
+    """One plain sentence about a session, built only from its rule hits and its events.
+
+    Pure and deterministic: the same events and hits always give the same sentence, and
+    nothing is guessed beyond what the events record (paths, credentials, commands, tokens).
+    """
+    if not events:
+        return "No events were recorded for this session."
+    ordered = sorted(events, key=_moment)
+    seconds = int((_moment(ordered[-1]) - _moment(ordered[0])).total_seconds())
+    minutes = seconds // 60
+    when = f"{minutes} min" if minutes else "under a minute"
+    source = ordered[0].src_ip
+    recon = any(h["family"] == "recon" for h in hits)
+
+    def req(e: Event, key: str) -> str:
+        return str((e.request or {}).get(key) or "")
+
+    clauses: list[str] = []
+    paths = {
+        req(e, "path")
+        for e in ordered
+        if e.action.value in ("http_request", "api_call") and not e.honeytoken_id and req(e, "path")
+    }
+    if paths:
+        verb = "probed" if recon else "requested"
+        scanner = "scanner " if recon else ""
+        clauses.append(f"{verb} {_plural(len(paths), scanner + 'path')}")
+    clauses.extend(
+        f"triggered {h['name']} ({h['rule_id']})" for h in hits if h["family"] == "exploit"
+    )
+
+    attempts = [e for e in ordered if e.action.value == "login_attempt"]
+    successes = [e for e in ordered if e.action.value == "login_success"]
+    # Tokens already described by a read, a login or an attempt: not repeated as "used".
+    covered = {e.honeytoken_id for e in attempts + successes if e.honeytoken_id}
+    seen_reads: set[tuple[str, str]] = set()
+    for e in ordered:
+        if e.action.value == "file_read" and e.honeytoken_id:
+            covered.add(e.honeytoken_id)
+            read = (req(e, "path") or "a file", e.honeytoken_id)
+            if read not in seen_reads:
+                seen_reads.add(read)
+                clauses.append(f"read {read[0]} (honeytoken {read[1]})")
+    tokens = {e.honeytoken_id for e in ordered if e.action.value == "honeytoken_use"}
+    for token in sorted(t for t in tokens - covered if t):
+        clauses.append(f"used honeytoken {token}")
+
+    leaked = any(e.honeytoken_id for e in attempts + successes)
+    if successes:
+        text = f"logged in {_LOGIN_WHERE.get(ordered[0].service.value, 'to the decoy')}"
+        if leaked:
+            text += " with the leaked password"
+        failed = len(attempts) - len(successes)
+        if failed > 0:
+            text += f" after {_plural(failed, 'failed attempt')}"
+        clauses.append(text)
+    elif attempts:
+        text = f"tried {_plural(len(attempts), 'login')}"
+        if leaked:
+            text += " including a leaked password"
+        clauses.append(text)
+
+    commands = [
+        str((e.request or {}).get("command") or "") for e in ordered if e.action.value == "command"
+    ]
+    if commands:
+        text = f"ran {_plural(len(commands), 'command')}"
+        if any(_DOWNLOAD.search(c) for c in commands):
+            text += " including a download"
+        clauses.append(text)
+
+    if not clauses:
+        return f"From {source} over {when}: only connection events were recorded."
+    body = clauses[0] if len(clauses) == 1 else f"{', '.join(clauses[:-1])} and {clauses[-1]}"
+    return f"From {source} over {when}: {body}."
+
+
+def _event_owners(conn: sqlite3.Connection) -> dict[str, tuple[str, str]]:
+    """Event id -> (session id, actor id). A session lists its events in `sessions.event_ids`."""
+    owners: dict[str, tuple[str, str]] = {}
+    for row in conn.execute(
+        "SELECT f.session_id, f.actor_id, s.event_ids FROM findings f"
+        " JOIN sessions s ON s.session_id = f.session_id"
+    ):
+        for event_id in _loads(row["event_ids"], []):
+            owners[event_id] = (row["session_id"], row["actor_id"])
+    return owners
+
+
+def honeytoken_banner(conn: sqlite3.Connection) -> dict[str, Any] | None:
+    """The most recent use of a planted secret, with the session that used it."""
+    owners = _event_owners(conn)
+    for row in conn.execute(
+        "SELECT event_id, honeytoken_id, src_ip FROM events"
+        " WHERE honeytoken_id IS NOT NULL ORDER BY ts DESC"
+    ):
+        if row["event_id"] in owners:
+            session_id, actor_id = owners[row["event_id"]]
+            return {
+                "honeytoken_id": row["honeytoken_id"],
+                "src_ip": row["src_ip"],
+                "session_id": session_id,
+                "actor_id": actor_id,
+            }
+    return None
+
+
+def kill_chain(conn: sqlite3.Connection, actor_id: str) -> list[dict[str, Any]]:
+    """Recon, credential and misuse: which stages the actor reached, and when (first event)."""
+    evidence: dict[str, set[str]] = {family: set() for family, _ in KILL_CHAIN}
+    for row in conn.execute("SELECT hits FROM findings WHERE actor_id=?", (actor_id,)):
+        for hit in _loads(row["hits"], []):
+            if hit["family"] in evidence:
+                evidence[hit["family"]].update(hit["evidence"])
+    moments: dict[str, datetime] = {}
+    for event_id in set().union(*evidence.values()):
+        row = conn.execute(
+            "SELECT ts, replay_ts FROM events WHERE event_id=?", (event_id,)
+        ).fetchone()
+        if row:
+            moments[event_id] = datetime.fromisoformat(row["replay_ts"] or row["ts"])
+    out = []
+    for family, label in KILL_CHAIN:
+        times = [moments[e] for e in evidence[family] if e in moments]
+        out.append(
+            {
+                "stage": family,
+                "label": label,
+                "reached": bool(evidence[family]),
+                "events": len(evidence[family]),
+                "first": min(times).isoformat() if times else None,
+            }
+        )
+    return out
 
 
 def score_segments(hits: list[dict[str, Any]], width: int = 600) -> dict[str, Any]:
@@ -410,6 +578,7 @@ def actor_detail(conn: sqlite3.Connection, actor_id: str) -> dict[str, Any] | No
     most = max(by_service.values()) if by_service else 1
     return {
         **actor,
+        "kill_chain": kill_chain(conn, actor_id),
         "explanation": explanation[0] if explanation else "",
         "session_rows": sessions,
         "by_service": [

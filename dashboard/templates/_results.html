@@ -14,11 +14,13 @@
     <td>{{ scorebar(r.score, r.verdict) }}</td>
     <td>
       <a class="row-link" href="/session/{{ r.session_id }}"><span class="chip">{{ r.service }}</span> {{ r.src_ip }}</a>
+      {% if r.honeytokens %}<span class="chip bad honeytoken-badge" title="{{ r.honeytokens|join(', ') }}"><svg class="icon"><use href="#i-key"/></svg>honeytoken</span>{% endif %}
       <span class="cell-sub trunc" title="{{ r.agent }}">{{ r.agent or 'no user agent' }}</span>
     </td>
     <td><a class="mono" href="/actor/{{ r.actor_id }}">{{ r.actor_id[:12] }}</a>
       {% if r.actor_sessions > 1 %}<span class="cell-sub">{{ r.actor_sessions }} sessions · {{ r.services|join(', ') }}</span>{% endif %}</td>
-    <td><div class="chips">{% for rule in r.rules %}<span class="chip rule">{{ rule }}</span>{% else %}<span class="muted">none</span>{% endfor %}</div></td>
+    <td><div class="chips">{% for rule in r.rules %}<span class="chip rule">{{ rule }}</span>{% else %}<span class="muted">none</span>{% endfor %}</div>
+      {% if r.techniques %}<div class="chips technique-chips" aria-label="ATT&amp;CK techniques">{% for t in r.techniques %}<span class="chip mono">ATT&amp;CK {{ t }}</span>{% endfor %}</div>{% endif %}</td>
     <td>{% if r.ml_score is not none %}<span class="cell-main">{{ '%.0f' % (r.ml_score * 100) }}%</span>
       {% if r.disagrees %}<span class="chip warn">disagrees</span>{% endif %}{% else %}<span class="muted">none</span>{% endif %}</td>
     <td><span class="mono" title="{{ r.first_seen }}">{{ r.first_seen|when }}</span>

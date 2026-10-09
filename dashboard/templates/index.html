@@ -16,6 +16,11 @@
 {% endblock %}
 {% block content %}
 <div class="stack">
+{% if token_banner %}
+<div class="callout warn honeytoken-banner"><svg class="icon"><use href="#i-key"/></svg>
+  <div>Honeytoken <span class="mono">{{ token_banner.honeytoken_id }}</span> was used by {{ token_banner.src_ip }}, by <a class="mono" href="/actor/{{ token_banner.actor_id }}">actor {{ token_banner.actor_id[:12] }}</a>. <a href="/session/{{ token_banner.session_id }}">Open that session</a>.</div>
+</div>
+{% endif %}
 <div class="kpis">
   <div class="kpi is-accent"><div class="kpi-label">Sessions</div><div class="kpi-value">{{ '{:,}'.format(stats.sessions) }}</div><div class="kpi-note">{{ '{:,}'.format(stats.events) }} events captured</div></div>
   <div class="kpi is-bad"><div class="kpi-label">Noteworthy</div><div class="kpi-value">{{ '{:,}'.format(stats.verdicts.Noteworthy) }}</div><div class="kpi-note">needs a look first</div></div>
@@ -73,7 +78,11 @@
     <noscript><button type="submit">Filter</button></noscript>
   </form>
   <div id="results">
+  {% if stats.sessions %}
   {% include "_results.html" %}
+  {% else %}
+  <div class="empty">No data yet. Run python tools/seed_demo.py --db data/demo.db to load sample data, or start the decoys (see docs/DEMO.md).</div>
+  {% endif %}
   </div>
 </section>
 </div>
