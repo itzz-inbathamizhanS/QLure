@@ -95,6 +95,62 @@ def test_busy_port_exits_2_and_starts_nothing(run_live, tmp_path):
     assert not (tmp_path / "logs").exists()
 
 
+def test_busy_ports_honours_patched_port_is_free(run_live, monkeypatch):
+    args = run_live.parse_args(["--password", "x", "--dashboard-port", str(free_port())])
+    services = run_live.build_services(args, workdir=Path("."))
+    monkeypatch.setattr(run_live, "port_is_free", lambda port, host="127.0.0.1": True)
+    assert run_live.busy_ports(services) == []
+    monkeypatch.setattr(run_live, "port_is_free", lambda port, host="127.0.0.1": False)
+    assert run_live.busy_ports(services) == [s for s in services if s.port]
+
+
+def test_permission_error_is_needs_admin_not_in_use(run_live, tmp_path, monkeypatch, capsys):
+    port = free_port()  # bind before patching, the patch refuses every bind
+
+    def refuse(self, address):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(socket.socket, "bind", refuse)
+    assert run_live.port_status(port) == "needs_admin"
+    assert not run_live.port_is_free(port)
+    svc = run_live.Service("dashboard", port, [])
+    text = run_live.busy_message([svc], windows=False, needs_admin={port})
+    assert "administrator rights" in text and "in use" not in text
+
+    def boom(*a, **k):
+        raise AssertionError("must not start anything")
+
+    code = run_live.main(
+        ["--workdir", str(tmp_path), "--dashboard-port", str(port), "--password", "p"], popen=boom
+    )
+    err = capsys.readouterr().err
+    assert code == 2 and f"port {port} needs administrator rights" in err
+    assert "in use" not in err
+
+
+def test_busy_dashboard_port_exits_2_with_no_process(run_live, tmp_path, capsys):
+    holder = socket.socket()
+    holder.bind(("127.0.0.1", 0))
+    holder.listen()
+    procs = []
+
+    def fake_popen(argv, **kwargs):
+        procs.append(FakeProc())
+        return procs[-1]
+
+    try:
+        port = holder.getsockname()[1]
+        code = run_live.main(
+            ["--workdir", str(tmp_path), "--dashboard-port", str(port), "--password", "p"],
+            popen=fake_popen,
+        )
+    finally:
+        holder.close()
+    err = capsys.readouterr().err
+    assert code == 2 and procs == []
+    assert f"  {port:<5} (dashboard)" in err and "already in use" in err
+
+
 def test_summary_has_dashboard_line_and_planted_password(run_live):
     args = run_live.parse_args(["--password", "pw123"])
     services = run_live.build_services(args, workdir=Path("."))
@@ -184,7 +240,7 @@ def test_main_reports_crashed_child_and_stops_rest(run_live, tmp_path, monkeypat
     monkeypatch.setattr(run_live, "port_is_free", lambda port, host="127.0.0.1": True)
     monkeypatch.setattr(run_live, "wait_ready", lambda port, proc, **k: True)
     code = run_live.main(
-        ["--workdir", str(tmp_path), "--dashboard-port", "9", "--password", "p"],
+        ["--workdir", str(tmp_path), "--dashboard-port", str(free_port()), "--password", "p"],
         popen=fake_popen,
         sleep=lambda _: None,
     )
@@ -203,7 +259,8 @@ def test_main_reports_service_that_never_gets_ready(run_live, tmp_path, monkeypa
         return procs[-1]
 
     code = run_live.main(
-        ["--workdir", str(tmp_path), "--dashboard-port", "9", "--password", "p"], popen=fake_popen
+        ["--workdir", str(tmp_path), "--dashboard-port", str(free_port()), "--password", "p"],
+        popen=fake_popen,
     )
     assert code == 1 and "FAILED web decoy" in capsys.readouterr().out
     assert all(p.terminated for p in procs)

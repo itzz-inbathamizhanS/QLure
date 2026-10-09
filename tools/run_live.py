@@ -20,7 +20,7 @@ import socket
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Any
@@ -127,26 +127,62 @@ def build_services(
     return services
 
 
-def port_is_free(port: int, host: str = HOST) -> bool:
+def port_status(port: int, host: str = HOST) -> str:
+    """'free', 'in_use', or 'needs_admin' (the OS refuses the bind, e.g. ports below 1024)."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         try:
             sock.bind((host, port))
-        except OSError:
-            return False
-    return True
+        except PermissionError:
+            return "needs_admin"
+        except OSError as exc:
+            if getattr(exc, "winerror", None) == 10013:  # WSAEACCES on Windows
+                return "needs_admin"
+            return "in_use"
+    return "free"
 
 
-def busy_ports(services: Sequence[Service], is_free: Callable[[int], bool] = port_is_free):
-    return [s for s in services if s.port and not is_free(s.port)]
+def port_is_free(port: int, host: str = HOST) -> bool:
+    return port_status(port, host) == "free"
 
 
-def busy_message(busy: Sequence[Service], windows: bool | None = None) -> str:
+def busy_ports(
+    services: Sequence[Service], is_free: Callable[[int], bool] | None = None
+) -> list[Service]:
+    check = is_free or port_is_free  # looked up at call time, so a patched port_is_free works
+    return [s for s in services if s.port and not check(s.port)]
+
+
+def denied_ports(busy: Sequence[Service]) -> set[int]:
+    return {s.port for s in busy if port_status(s.port) == "needs_admin"}
+
+
+def busy_message(
+    busy: Sequence[Service], windows: bool | None = None, needs_admin: Collection[int] = ()
+) -> str:
     windows = (os.name == "nt") if windows is None else windows
-    lines = ["These ports are already in use, nothing was started:"]
-    for s in busy:
-        hint = f"netstat -ano | findstr :{s.port}" if windows else f"lsof -i :{s.port}"
-        lines.append(f"  {s.port:<5} ({s.name})  find the owner with: {hint}")
-    lines.append("Stop the other program (or `docker compose down`) and run this again.")
+    in_use = [s for s in busy if s.port not in needs_admin]
+    denied = [s for s in busy if s.port in needs_admin]
+    lines: list[str] = []
+    if in_use:
+        lines.append("These ports are already in use, nothing was started:")
+        for s in in_use:
+            hint = f"netstat -ano | findstr :{s.port}" if windows else f"lsof -i :{s.port}"
+            lines.append(f"  {s.port:<5} ({s.name})  find the owner with: {hint}")
+    if denied:
+        lines.append("These ports cannot be opened by this user, nothing was started:")
+        for s in denied:
+            if windows:
+                lines.append(
+                    f"  port {s.port} needs administrator rights - "
+                    "run as administrator or pick another port"
+                )
+            else:
+                lines.append(
+                    f"  port {s.port} needs administrator rights (ports below 1024) - "
+                    "pick a port above 1024 or run as administrator"
+                )
+    if in_use:
+        lines.append("Stop the other program (or `docker compose down`) and run this again.")
     return "\n".join(lines)
 
 
@@ -285,7 +321,7 @@ def main(
     services = build_services(args, workdir=work)
     busy = busy_ports(services)
     if busy:
-        print(busy_message(busy), file=sys.stderr)
+        print(busy_message(busy, needs_admin=denied_ports(busy)), file=sys.stderr)
         return 2
 
     if args.reset:
