@@ -90,6 +90,19 @@ so the recorded IP is not evidence. Never use it on an exposed interface. The de
 (non-zero exit) when `optional` is set and `QLURE_BIND_HOST` / `--host` is not a loopback address.
 Invalid values fall back to `required`. The compose files never set it.
 
+## Dashboard endpoints without a login
+
+Two dashboard routes answer without the admin login. Both return counts and times only.
+
+- `/healthz` is public by design, for probes. It returns status, store check, event and session
+  counts, last stored event time, live state and version. No paths or config.
+- `/metrics` is public only when `QLURE_METRICS_PUBLIC=1` is set. Otherwise it needs the login.
+  With the variable set it returns event, session (by verdict), actor and honeytoken-hit totals and
+  the last live pass time. It has no IP addresses, payloads or secrets, but the counts still show
+  attack volume. **Warning:** leave it off unless the dashboard is bound to localhost or a trusted
+  scrape network, and never expose it to the internet. See
+  [page 6](06-dashboard-and-settings.md#public-metrics-qlure_metrics_public1).
+
 ## Things that are not protections
 
 - The dashboard password is a single shared secret, not user accounts.

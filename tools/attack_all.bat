@@ -13,6 +13,12 @@ if exist ".venv\Scripts\activate.bat" call ".venv\Scripts\activate.bat"
 echo.
 echo === 1/4  Sending the attack scenarios (15 steps, 5 attacker types) ===
 python tools\demo_scenario.py %*
+rem Exit 3 means no decoy is listening. The scenario has already printed why, so only the fix is shown.
+if errorlevel 3 (
+    echo.
+    echo Start the decoys first: python tools\run_live.py ^(keep that window open^), then run this file again.
+    exit /b 3
+)
 if errorlevel 1 (
     echo.
     echo The scenario did not finish. Are the decoys running? Start them first with:

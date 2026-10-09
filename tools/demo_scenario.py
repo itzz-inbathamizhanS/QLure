@@ -13,8 +13,8 @@ are refused, and no step contacts any other host.
     python tools/demo_scenario.py --source-ip 203.0.113.5   # every step from one address
     python tools/demo_scenario.py --no-proxy-header     # when the gateway adds PROXY itself
 
-Exit codes: 0 all selected steps ran, 1 at least one step could not reach its decoy,
-2 refused target or bad arguments.
+Exit codes: 0 all selected steps ran, 1 at least one step was skipped or could not reach its
+decoy, 2 refused target or bad arguments, 3 no decoy the selected steps need is listening.
 """
 
 from __future__ import annotations
@@ -59,6 +59,7 @@ PERSONA_IPS = {
 SOURCE_PORT = 40404
 BROWSER_UA = "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
 TIMEOUT = 3.0
+PROBE_TIMEOUT = 0.7
 SSH_TIMEOUT = 15.0
 LINE_LIMIT = 512
 MYSQL_LIMIT = 4096
@@ -169,6 +170,7 @@ class Outcome:
     sent: list[str] = field(default_factory=list)
     replies: list[str] = field(default_factory=list)
     error: str | None = None
+    skipped: str | None = None
     source_ip: str = ""
 
     def record(self, sent: str, reply: str) -> None:
@@ -597,6 +599,44 @@ def benign_visit(ctx: Context, out: Outcome) -> None:
 # Running and reporting
 
 
+# The decoy each step talks to. A step whose decoy is not listening is skipped, not run.
+STEP_SERVICE = {
+    "web-scan": "web",
+    "web-hunt": "web",
+    "web-lfi": "web",
+    "web-injection": "web",
+    "web-exploit-strings": "web",
+    "web-login": "web",
+    "web-phpmyadmin": "web",
+    "web-scanner-ua": "web",
+    "api-key-brute": "api",
+    "api-key-reuse": "api",
+    "ssh-login": "ssh",
+    "ftp-login": "ftp",
+    "mysql-probe": "mysql",
+    "redis-auth": "redis",
+    "benign-visit": "web",
+}
+
+
+def probe(host: str, port: int) -> bool:
+    """True when something accepts a TCP connection on host:port within PROBE_TIMEOUT."""
+    try:
+        with socket.create_connection((host, port), timeout=PROBE_TIMEOUT):
+            return True
+    except OSError:
+        return False
+
+
+def no_decoys_message(host: str) -> str:
+    run_live = str(Path("tools") / "run_live.py")  # backslashes on Windows, slashes elsewhere
+    return (
+        f"No QLure decoys are listening on {host}. Start them first in another window: "
+        f"python {run_live} (leave it open), or for Docker: docker compose up -d --build "
+        "and run this script with --no-proxy-header."
+    )
+
+
 def run_step(ctx: Context, item: Step) -> Outcome:
     """Run one step from its persona's address (or the --source-ip override)."""
     source = visitor_ip(ctx, item)
@@ -645,6 +685,8 @@ def persona_rules(items: Sequence[Step]) -> tuple[str, ...]:
 def render_step(item: Step, out: Outcome) -> None:
     print(f"\n[{item.id}] {item.title}")
     print(f"  from:   {item.persona} {out.source_ip}")
+    if out.skipped:
+        print(f"  skipped: {_clip(out.skipped)}")
     for sent, reply in zip(out.sent, out.replies, strict=True):
         print(f"  > {_clip(sent)}")
         print(f"    < {_clip(reply)}")
@@ -671,8 +713,8 @@ def render_summary(results: Sequence[tuple[Step, Outcome]]) -> None:
         rule_text = ",".join(rules) or "-"
         print(f"  {persona:<20} {pairs[0][1].source_ip:<16} {verdict:<12} {rule_text}")
         for item, out in pairs:
-            status = "error" if out.error else "ok"
-            print(f"    {item.id:<20} {status:<6} {len(out.sent):>4} reqs  {','.join(item.rules)}")
+            status = "skipped" if out.skipped else "error" if out.error else "ok"
+            print(f"    {item.id:<20} {status:<8} {len(out.sent):>4} reqs  {','.join(item.rules)}")
     print(
         "  Verdicts come from the rule weights alone: `qlure correlate` has the final say, "
         "and suppressors can lower a score."
@@ -761,14 +803,35 @@ def main(argv: Sequence[str] | None = None) -> int:
         render_list(selected)
         return 0
 
+    # Preflight: probe only the decoys the selected steps use, before any step sends a byte.
+    needed = {STEP_SERVICE[item.id] for item in selected}
+    services = [name for name in PORTS if name in needed]
+    up = [name for name in services if probe(ctx.host, ctx.ports[name])]
+    down = [name for name in services if name not in up]
+    if not up:
+        print(no_decoys_message(ctx.host), file=sys.stderr)
+        return 3
+    if down:
+        listed = ", ".join(f"{name} ({ctx.ports[name]})" for name in down)
+        failing = [item.id for item in selected if STEP_SERVICE[item.id] in down]
+        print(
+            f"warning: no decoy is listening on {ctx.host} for {listed}. "
+            f"These steps will be skipped: {', '.join(failing)}"
+        )
+
     results: list[tuple[Step, Outcome]] = []
     for item in selected:
-        out = run_step(ctx, item)
+        service = STEP_SERVICE[item.id]
+        if service in down:
+            reason = f"{service} decoy not listening"
+            out = Outcome(source_ip=visitor_ip(ctx, item), skipped=reason)
+        else:
+            out = run_step(ctx, item)
         render_step(item, out)
         results.append((item, out))
     render_summary(results)
     render_followups()
-    return 1 if any(out.error for _, out in results) else 0
+    return 1 if any(out.error or out.skipped for _, out in results) else 0
 
 
 if __name__ == "__main__":

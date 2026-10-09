@@ -62,8 +62,19 @@ def _resolve(host: str) -> list[str]:
     return [info[4][0] for info in socket.getaddrinfo(host, None)]
 
 
-def check_url(url: str) -> None:
-    """Raise AlertConfigError unless the URL is http(s) to a host that is not loopback/metadata."""
+def _blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    mapped = getattr(ip, "ipv4_mapped", None)
+    if mapped is not None:  # ::ffff:127.0.0.1 is 127.0.0.1
+        ip = mapped
+    return ip.is_loopback or ip.is_link_local or ip.is_unspecified or ip in METADATA_IPS
+
+
+def resolve_checked(url: str) -> list[str]:
+    """Validate the URL and resolve its host exactly once. Returns the validated addresses.
+
+    Every returned address passed the check; the caller must connect to these and never resolve
+    the name again (DNS rebinding). Raises AlertConfigError.
+    """
     try:
         parts = urlsplit(url)
         host = parts.hostname
@@ -74,31 +85,73 @@ def check_url(url: str) -> None:
         raise AlertConfigError("webhook URL scheme must be http or https")
     if not host or "@" in parts.netloc:
         raise AlertConfigError("webhook URL needs a host and no embedded credentials")
-    if os.environ.get(ALLOW_PRIVATE_ENV) == "1":
-        return
+    allow_private = os.environ.get(ALLOW_PRIVATE_ENV) == "1"
     try:
-        addresses = _resolve(host)
-    except OSError:
+        addresses = [text.split("%")[0] for text in _resolve(host)]
+        parsed = [ipaddress.ip_address(text) for text in addresses]
+    except (OSError, ValueError):
         raise AlertConfigError(f"cannot resolve the webhook host {host}") from None
-    for text in addresses:
-        ip = ipaddress.ip_address(text.split("%")[0])
-        if ip.is_loopback or ip.is_link_local or ip.is_unspecified or ip in METADATA_IPS:
-            raise AlertConfigError(
-                f"webhook host {host} resolves to a loopback/link-local/metadata address"
-                f" (set {ALLOW_PRIVATE_ENV}=1 to allow)"
-            )
+    if not parsed:
+        raise AlertConfigError(f"cannot resolve the webhook host {host}")
+    if not allow_private and any(_blocked(ip) for ip in parsed):
+        raise AlertConfigError(
+            f"webhook host {host} resolves to a loopback/link-local/metadata address"
+            f" (set {ALLOW_PRIVATE_ENV}=1 to allow)"
+        )
+    return addresses
 
 
-def _httpx_post(url: str, body: bytes, timeout: float) -> int:
+def check_url(url: str) -> None:
+    """Raise AlertConfigError unless the URL is http(s) to a host that is not loopback/metadata."""
+    resolve_checked(url)
+
+
+class _PinnedBackend:
+    """httpcore network backend that connects only to pre-validated addresses.
+
+    The request URL keeps the original hostname, so the Host header, SNI and certificate
+    verification all use it; only the TCP connect target is pinned. It never resolves a name.
+    """
+
+    def __init__(self, ips: list[str], inner: Any = None) -> None:
+        import httpcore
+
+        self._ips = list(ips)[:4]
+        self._inner = inner or httpcore.SyncBackend()
+
+    def connect_tcp(self, host: str, port: int, *args: Any, **kwargs: Any) -> Any:
+        last: Exception | None = None
+        for ip in self._ips:
+            try:
+                return self._inner.connect_tcp(ip, port, *args, **kwargs)
+            except Exception as exc:
+                last = exc
+        raise last or OSError("no validated address")
+
+    def __getattr__(self, name: str) -> Any:  # connect_unix_socket, sleep
+        return getattr(self._inner, name)
+
+
+def _pinned_transport(ips: list[str]) -> Any:
     import httpx
 
-    response = httpx.post(
-        url,
-        content=body,
-        headers={"Content-Type": "application/json"},
-        timeout=timeout,
-        follow_redirects=False,
-    )
+    transport = httpx.HTTPTransport()  # default TLS verification stays on
+    pool = transport._pool  # type: ignore[attr-defined]
+    if not hasattr(pool, "_network_backend"):
+        raise RuntimeError("cannot pin the connection address")  # fail closed
+    pool._network_backend = _PinnedBackend(ips)
+    return transport
+
+
+def _httpx_post(url: str, body: bytes, timeout: float, pinned: list[str] | None = None) -> int:
+    import httpx
+
+    if pinned is None:
+        pinned = resolve_checked(url)
+    with httpx.Client(
+        transport=_pinned_transport(pinned), timeout=timeout, follow_redirects=False
+    ) as client:
+        response = client.post(url, content=body, headers={"Content-Type": "application/json"})
     return response.status_code
 
 
@@ -220,9 +273,9 @@ def notify_new_noteworthy(
     """Post new findings once each. Never raises: problems are in Result.error and the log."""
     result = Result()
     try:
-        check_url(url)
+        pinned = resolve_checked(url)  # resolved once; the POST connects to these only
         todo, result.more = pending(db_path, state_path, min_verdict, max_alerts)
-        sender = post or _httpx_post
+        sender = post or (lambda u, b, t: _httpx_post(u, b, t, pinned=pinned))
         alerted = _load_state(state_path)
         for payload in todo:
             if _deliver(sender, url, _body(payload), timeout):

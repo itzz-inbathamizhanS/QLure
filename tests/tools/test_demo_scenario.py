@@ -301,6 +301,66 @@ def test_planted_api_key_reply_is_accepted_by_the_api_decoy(web_and_api):
         assert api.get("/api/v1/users", headers={"X-API-Key": "wrong"}).status_code == 401
 
 
+def test_every_step_names_the_decoy_it_talks_to():
+    assert {item.id for item in demo.STEPS} == set(demo.STEP_SERVICE)
+    assert set(demo.STEP_SERVICE.values()) <= set(demo.PORTS)
+
+
+def test_all_decoys_closed_exits_3_with_the_start_message(no_traffic, monkeypatch, capsys):
+    monkeypatch.setattr(demo, "probe", lambda host, port: False)
+    assert demo.main([]) == 3
+    captured = capsys.readouterr()
+    assert "No QLure decoys are listening on 127.0.0.1" in captured.err
+    assert "python tools" in captured.err and "run_live.py" in captured.err
+    assert "--no-proxy-header" in captured.err
+    assert "Traceback" not in captured.err
+    assert "from:" not in captured.out  # no step ran, so no step output
+
+
+def test_preflight_probes_only_the_ports_the_selected_steps_use(no_traffic, monkeypatch, capsys):
+    probed = []
+
+    def record(host, port):
+        probed.append((host, port))
+        return False
+
+    monkeypatch.setattr(demo, "probe", record)
+    assert demo.main(["--only", "redis-auth", "--target", "::1"]) == 3
+    assert probed == [("::1", demo.PORTS["redis"])]
+
+
+def test_one_decoy_down_skips_its_steps_and_the_others_still_run(web_and_api, monkeypatch, capsys):
+    ssh_port = demo.PORTS["ssh"]
+    monkeypatch.setitem(demo.PORTS, "web", web_and_api["web"])
+    monkeypatch.setitem(demo.PORTS, "api", web_and_api["api"])
+    subset = [item for item in demo.STEPS if item.id in ("web-scan", "ssh-login", "benign-visit")]
+    monkeypatch.setattr(demo, "STEPS", subset)
+    monkeypatch.setattr(demo, "probe", lambda host, port: port != ssh_port)
+
+    assert demo.main([]) == 1
+    out = capsys.readouterr().out
+    assert "warning: no decoy is listening on 127.0.0.1 for ssh (2222)" in out
+    assert "These steps will be skipped: ssh-login" in out
+    assert "skipped: ssh decoy not listening" in out
+    assert "ConnectError" not in out and "WinError" not in out
+    assert "  > GET /wp-login.php" in out  # the web steps really ran
+    assert "ssh-login" in out and "skipped" in out.split("Summary", 1)[1]
+
+
+def test_dry_run_and_list_never_probe(no_traffic, monkeypatch, capsys):
+    def refuse(host, port):
+        raise AssertionError("dry run or list probed a port")
+
+    monkeypatch.setattr(demo, "probe", refuse)
+    assert demo.main(["--dry-run"]) == 0
+    assert demo.main(["--list"]) == 0
+    assert "nothing was sent" in capsys.readouterr().out
+
+
+def test_probe_reports_a_closed_port_as_not_listening():
+    assert demo.probe("127.0.0.1", _free_port()) is False
+
+
 def test_mysql_handshake_token_matches_what_the_decoy_recognises():
     from decoys.banners import dialogues, listeners
 
