@@ -11,14 +11,7 @@
 <div class="stack">
 <section class="panel">
   <div class="hero">
-    {% set circ = 326.73 %}
-    <svg class="gauge" viewBox="0 0 132 132" role="img" aria-label="Combined score {{ a.score }} of 100, {{ a.verdict }}">
-      <circle cx="66" cy="66" r="52" fill="none" stroke-width="12" class="g-track"/>
-      <circle cx="66" cy="66" r="52" fill="none" stroke-width="12" stroke-linecap="round" class="g-{{ a.verdict }}"
-        stroke-dasharray="{{ (([a.score, 100]|min) / 100 * circ)|round(2) }} {{ circ }}" transform="rotate(-90 66 66)"/>
-      <text x="66" y="72" text-anchor="middle" class="gauge-num">{{ a.score }}</text>
-      <text x="66" y="92" text-anchor="middle" class="gauge-sub">COMBINED</text>
-    </svg>
+    <div class="bignum v-{{ a.verdict }}">{{ a.score }}<small>COMBINED</small></div>
     <div>
       <div class="row">{{ verdict(a.verdict, 'lg') }}{% for r in a.rules %}<span class="chip rule">{{ r }}</span>{% endfor %}</div>
       <dl class="facts">

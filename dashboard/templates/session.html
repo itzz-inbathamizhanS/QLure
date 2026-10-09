@@ -18,14 +18,7 @@
 
 <section class="panel">
   <div class="hero">
-    {% set circ = 326.73 %}
-    <svg class="gauge" viewBox="0 0 132 132" role="img" aria-label="Score {{ shown_score }} of 100, {{ s.effective_verdict }}">
-      <circle cx="66" cy="66" r="52" fill="none" stroke-width="12" class="g-track"/>
-      <circle cx="66" cy="66" r="52" fill="none" stroke-width="12" stroke-linecap="round" class="g-{{ s.effective_verdict }}"
-        stroke-dasharray="{{ (([shown_score, 100]|min) / 100 * circ)|round(2) }} {{ circ }}" transform="rotate(-90 66 66)"/>
-      <text x="66" y="72" text-anchor="middle" class="gauge-num">{{ shown_score }}</text>
-      <text x="66" y="92" text-anchor="middle" class="gauge-sub">OF 100</text>
-    </svg>
+    <div class="bignum v-{{ s.effective_verdict }}">{{ shown_score }}<small>OF 100</small></div>
     <div>
       <div class="row">{{ verdict(s.effective_verdict, 'lg') }}
         {% for f in s.hits|map(attribute='family')|unique %}<span class="fam fam-{{ f }}">{{ f }}</span>{% endfor %}
