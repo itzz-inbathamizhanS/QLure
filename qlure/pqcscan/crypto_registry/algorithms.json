@@ -1,0 +1,121 @@
+{
+    "registry_version": "1.1",
+    "algorithms": {
+        "RSA": {
+            "class": "CLASSICAL",
+            "type": "BOTH"
+        },
+        "ECDSA": {
+            "class": "CLASSICAL",
+            "type": "SIGNATURE"
+        },
+        "ECDHE": {
+            "class": "CLASSICAL",
+            "type": "KEM"
+        },
+        "X25519": {
+            "class": "CLASSICAL",
+            "type": "KEM"
+        },
+        "AES": {
+            "class": "SYMMETRIC",
+            "type": "CIPHER"
+        },
+        "CHACHA20": {
+            "class": "SYMMETRIC",
+            "type": "CIPHER"
+        },
+        "KYBER": {
+            "class": "PQC",
+            "type": "KEM"
+        },
+        "ML-KEM": {
+            "class": "PQC",
+            "type": "KEM"
+        },
+        "DILITHIUM": {
+            "class": "PQC",
+            "type": "SIGNATURE"
+        },
+        "ML-DSA": {
+            "class": "PQC",
+            "type": "SIGNATURE"
+        },
+        "FALCON": {
+            "class": "PQC",
+            "type": "SIGNATURE"
+        },
+        "SPHINCS+": {
+            "class": "PQC",
+            "type": "SIGNATURE"
+        }
+    },
+    "groups": {
+        "0x11ec": {
+            "name": "X25519MLKEM768",
+            "class": "HYBRID_PQC",
+            "note": "X25519 + ML-KEM-768 (FIPS 203)"
+        },
+        "0x11eb": {
+            "name": "SecP256r1MLKEM768",
+            "class": "HYBRID_PQC",
+            "note": "P-256 + ML-KEM-768 (FIPS 203)"
+        },
+        "0x11ed": {
+            "name": "SecP384r1MLKEM1024",
+            "class": "HYBRID_PQC",
+            "note": "P-384 + ML-KEM-1024 (FIPS 203)"
+        },
+        "0x6399": {
+            "name": "X25519Kyber768Draft00",
+            "class": "HYBRID_PQC",
+            "note": "Pre-standard Kyber draft, superseded by X25519MLKEM768"
+        },
+        "0x001d": {
+            "name": "X25519",
+            "class": "CLASSICAL"
+        },
+        "0x001e": {
+            "name": "X448",
+            "class": "CLASSICAL"
+        },
+        "0x0017": {
+            "name": "secp256r1",
+            "class": "CLASSICAL"
+        },
+        "0x0018": {
+            "name": "secp384r1",
+            "class": "CLASSICAL"
+        },
+        "0x0019": {
+            "name": "secp521r1",
+            "class": "CLASSICAL"
+        },
+        "0x0100": {
+            "name": "ffdhe2048",
+            "class": "CLASSICAL"
+        },
+        "0x0101": {
+            "name": "ffdhe3072",
+            "class": "CLASSICAL"
+        },
+        "0x0102": {
+            "name": "ffdhe4096",
+            "class": "CLASSICAL"
+        }
+    },
+    "signature_oids": {
+        "2.16.840.1.101.3.4.3.17": {
+            "name": "ML-DSA-44",
+            "class": "PQC"
+        },
+        "2.16.840.1.101.3.4.3.18": {
+            "name": "ML-DSA-65",
+            "class": "PQC"
+        },
+        "2.16.840.1.101.3.4.3.19": {
+            "name": "ML-DSA-87",
+            "class": "PQC"
+        }
+    }
+}
