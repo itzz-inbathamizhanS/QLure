@@ -4,7 +4,15 @@
       "Bash(pytest:*)",
       "Bash(ruff check:*)",
       "Bash(ruff format --check:*)",
-      "Bash(qlure schema --check)"
+      "Bash(qlure schema --check)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git fetch:*)",
+      "Bash(git pull origin:*)",
+      "Bash(git push -u origin:*)"
     ]
   },
   "hooks": {

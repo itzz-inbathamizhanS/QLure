@@ -1,6 +1,6 @@
 ---
 name: allocate
-description: Task allocator for QLure. Classifies a task and dispatches it to the cheapest suitable sub-agent (planner/opus, coder/haiku, fixer/sonnet, setup/sonnet). Use with /allocate <task>.
+description: Task allocator for QLure. Classifies a task and dispatches it to the cheapest suitable sub-agent (planner/opus, coder/haiku, fixer/sonnet, setup/sonnet, git/haiku, deploy/sonnet, files/haiku). Use with /allocate <task>.
 ---
 
 Task: $ARGUMENTS

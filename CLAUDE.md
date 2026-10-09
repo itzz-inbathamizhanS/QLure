@@ -12,6 +12,9 @@ The main session is a thin dispatcher. Route work to sub-agents by task type (al
 | Long or repetitive code, tests, docs, boilerplate | `qlure-coder` | haiku |
 | Critical bugs, security, data integrity, failing CI coder could not fix | `qlure-fixer` | sonnet |
 | Dependencies, Docker, CI, env, tooling, setup | `qlure-setup` | sonnet |
+| git status/commit/push/pull/fetch/merge/conflicts | `qlure-git` | haiku |
+| Vercel/Render deploys, logs, env vars, auto-deploy config | `qlure-deploy` | sonnet |
+| Find/move/rename/organize files, .gitignore, cleanup | `qlure-files` | haiku |
 
 Rules:
 - Planner output tags each step with an agent; dispatch steps accordingly.
