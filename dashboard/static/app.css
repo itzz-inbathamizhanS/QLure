@@ -215,7 +215,18 @@ button:disabled { opacity: .45; cursor: not-allowed; filter: none; }
   border-bottom: 1px solid var(--line); background: var(--panel-2); }
 
 /* ---------- tables ---------- */
-.table-wrap { overflow-x: auto; }
+/* Wide tables scroll inside their box. The fades on both edges are the scroll hint: the panel-
+   coloured covers are "local" (they move with the content, so they hide the fade when the table
+   fits or the reader is already at that edge) and the shadows are "scroll" (pinned to the box).
+   Colours come from the theme variables only; the shadow is --text mixed with transparency. */
+.table-wrap {
+  overflow-x: auto;
+  background:
+    linear-gradient(to right, var(--panel) 30%, transparent) 0 0 / 28px 100% no-repeat local,
+    linear-gradient(to left, var(--panel) 30%, transparent) 100% 0 / 28px 100% no-repeat local,
+    linear-gradient(to right, color-mix(in srgb, var(--text) 22%, transparent), transparent) 0 0 / 10px 100% no-repeat scroll,
+    linear-gradient(to left, color-mix(in srgb, var(--text) 22%, transparent), transparent) 100% 0 / 10px 100% no-repeat scroll;
+}
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 thead th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 650;
@@ -226,14 +237,18 @@ tbody tr:last-child td { border-bottom: 0; }
 td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .cell-main { font-weight: 600; color: var(--text); }
 .cell-sub { display: block; font-size: 12px; color: var(--muted); }
-td .chips { flex-wrap: wrap; min-width: 0; }
+/* Rule and technique chips wrap onto more lines instead of widening the column. */
+td .chips { flex-wrap: wrap; min-width: 0; max-width: 200px; }
+td .chips .chip { white-space: normal; max-width: 100%; overflow-wrap: anywhere; }
 td .mono { white-space: nowrap; }
+.started-cell { white-space: nowrap; }
+.started-when { display: inline-block; min-width: 11.5em; }
 .row-link { color: var(--text); font-weight: 600; }
-.trunc { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+.trunc { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
 .scorebar { display: flex; align-items: center; gap: 8px; min-width: 110px; }
 .scorebar svg { width: 64px; height: 6px; flex: none; }
 .scorebar b { min-width: 26px; text-align: right; font-weight: 650; }
-.promoted { display: block; font-size: 11.5px; color: var(--muted); margin-top: 3px; white-space: nowrap; }
+.promoted { display: block; font-size: 11.5px; color: var(--muted); margin-top: 3px; }
 .pager { display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-top: 1px solid var(--line);
   font-size: 12.5px; color: var(--muted); }
 .empty { padding: 40px 18px; text-align: center; color: var(--muted); }
@@ -458,8 +473,9 @@ details.raw pre { margin-top: 8px; font: 11.5px/1.5 var(--mono); white-space: pr
 .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 3px var(--good-soft); }
 
 /* ---------- ATT&CK matrix ---------- */
-.matrix-scroll { overflow-x: auto; }
-.matrix { display: grid; gap: 8px; grid-template-columns: repeat(12, minmax(118px, 1fr)); min-width: 0; }
+/* Wraps by rows, so all twelve tactics stay visible at 1280px: six per row, then the rest below.
+   The tactics keep their kill-chain order (row by row, left to right). */
+.matrix { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); min-width: 0; }
 .tactic { min-width: 0; padding: 8px; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-sm); }
 .tactic-name { margin: 0 0 8px; font: 650 11.5px/1.3 var(--sans); text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
 .tactic-cells { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
@@ -478,7 +494,6 @@ a.cell.seen:focus-visible { outline: 2px solid var(--accent); outline-offset: 2p
 .other-techniques ul { margin: 6px 0 0; padding: 0; }
 @media (max-width: 860px) {
   .matrix { grid-template-columns: minmax(0, 1fr); }
-  .matrix-scroll { overflow-x: visible; }
 }
 
 /* ---------- SSH terminal replay ---------- */

@@ -8,7 +8,6 @@
 <section class="panel" aria-labelledby="matrix-h">
   <div class="panel-head"><h2 id="matrix-h">Techniques by tactic</h2><span class="hint">a seen technique links to its highest-scoring session; an unseen one is dimmed and says so</span></div>
   <div class="panel-body">
-    <div class="matrix-scroll">
     <div class="matrix">
     {% for col in matrix.columns %}
       <section class="tactic" aria-labelledby="tactic-{{ loop.index }}">
@@ -34,7 +33,6 @@
         </ul>
       </section>
     {% endfor %}
-    </div>
     </div>
     {% if matrix.other %}
     <div class="other-techniques">

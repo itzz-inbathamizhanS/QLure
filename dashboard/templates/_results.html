@@ -31,7 +31,7 @@
       {% if r.techniques %}<div class="chips technique-chips" aria-label="ATT&amp;CK techniques">{% for t in r.techniques %}<span class="chip mono">ATT&amp;CK {{ t }}</span>{% endfor %}</div>{% endif %}</td>
     <td>{% if r.ml_score is not none %}<span class="cell-main">{{ '%.0f' % (r.ml_score * 100) }}%</span>
       {% if r.disagrees %}<span class="chip warn">disagrees</span>{% endif %}{% else %}<span class="muted">none</span>{% endif %}</td>
-    <td><span class="mono" title="{{ r.first_seen }}">{{ r.first_seen|when }}</span>
+    <td class="started-cell"><span class="mono started-when" title="{{ r.first_seen }}">{{ r.first_seen|when }}</span>
       <span class="cell-sub">lasted {{ span(r.first_seen, r.last_seen) }}</span></td>
     <td>{% if r.label == 'malicious' %}<span class="chip bad">malicious</span>{% elif r.label == 'benign' %}<span class="chip">benign</span>{% else %}<span class="muted small">unreviewed</span>{% endif %}</td>
   </tr>
