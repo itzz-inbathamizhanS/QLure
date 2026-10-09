@@ -38,8 +38,9 @@ credential-stuffing run.
   too few. See [page 8](08-extras-pqc-and-ml.md).
 - **Sessions do not link by IP alone.** This prevents merging unrelated visitors, but it also means
   a determined actor who changes fingerprints can still split their activity across sessions.
-- **Banners are shallow.** FTP, MySQL and Redis catch probes and banner grabs. They do not run a
-  real protocol, so a full login or query session is not possible.
+- **Banner dialogues are short scripts.** FTP, MySQL and Redis answer a login and a few commands
+  with fixed replies (rule R11 judges Redis commands), but they do not run a real protocol and
+  never execute a query or store data.
 - **The database honeytoken `ht-db-001` is planted but not accepted.** Using it triggers no rule
   beyond reading it in `/.env`.
 - **The API accepts only the planted keys.** Other requests get fixed responses.

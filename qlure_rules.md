@@ -18,7 +18,8 @@ Each session is scored by the rules defined in `qlure/rules/rules.yaml`. A rule 
 | **R6** | Scanner tool | recon | 15 | medium | A scanner user agent (sqlmap, nikto, nmap, wpscan, feroxbuster, whatweb, httpx and others, case-insensitive substring), or a banner grab with no follow-up |
 | **R7** | Honeytoken use | misuse | 60 | high | A planted fake secret is used, such as the API key or SSH password |
 | **R8** | Post-login discovery | misuse | 35 | high | After SSH login: several discovery commands, or a download or persistence command |
-| **R9** | Sensitive file access | misuse | 25 | medium | A sensitive file is read, such as `.env` or `config.bak` |
+| **R9** | Sensitive file access | misuse | 25 | medium | A sensitive path is read: `/.env`, `/backup/*`, `/.git`, `/.aws`, `/.ssh`, `id_rsa`, `/etc/passwd`, `/etc/shadow` (also via `/download` traversal) |
+| **R11** | Data-store abuse | exploit | 30 | high | A Redis session sends `CONFIG SET`, `SLAVEOF`/`REPLICAOF`, `MODULE LOAD`, `EVAL`/`EVALSHA`, `FLUSHALL`/`FLUSHDB`, `DEBUG` or `SCRIPT` (case-insensitive). One command is Suspicious; with a planted AUTH (R7) it is Noteworthy |
 | **R10** | Kill-chain progression | chain | 25 | high | Activity moves through several families (recon, credential, misuse) |
 
 ## ATT&CK labels
@@ -45,6 +46,8 @@ Labels only: they never change a weight, threshold or verdict. They are defined 
 | lateral_movement | ssh or scp to another host | T1021.004 |
 | exfiltration | nc, netcat, tar piped to base64 | T1048 |
 | crypto_mining | xmrig, minerd, stratum+tcp | T1496 |
+
+**R11** - labels: `CONFIG SET`, `SLAVEOF`/`REPLICAOF`, `MODULE LOAD` T1190; `EVAL`, `EVALSHA`, `SCRIPT`, `DEBUG` T1059; `FLUSHALL`/`FLUSHDB` T1485. R8 counts SSH commands only.
 
 **R10** carries the union of the IDs of the recon, credential and misuse hits it chains.
 

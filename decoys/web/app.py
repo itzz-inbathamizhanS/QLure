@@ -20,7 +20,7 @@ from fastapi.templating import Jinja2Templates
 
 from decoys import content, honeytokens
 from decoys.common import fingerprint, read_capped, replay_ts
-from decoys.ssh.shell import load_fs
+from decoys.ssh.shell import _root_only, load_fs
 from qlure.events import Action, Service, emit
 
 SESSION_COOKIE = "VLXSESSID"
@@ -289,6 +289,8 @@ async def download(request: Request, file: str = "") -> Response:
     # Lookup is a dict key match in the SSH decoy's fake filesystem; the host is never read.
     fake = load_fs()
     path = _virtual_path(file)
+    if file and _root_only(path):  # same rule as the SSH shell: shadow, sudoers and /root
+        return _forbidden()
     if file and fake.is_file(path):
         _file_read(request, path)
         return PlainTextResponse(fake.files[path])

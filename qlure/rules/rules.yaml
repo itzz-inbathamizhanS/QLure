@@ -1,4 +1,4 @@
-# Correlation rules R1 to R10, from design doc section 10. Thresholds are starting points
+# Correlation rules R1 to R11, from design doc section 10. Thresholds are starting points
 # to be tuned on real captured sessions in captures/tuning/ only.
 rules:
   R1:
@@ -72,7 +72,7 @@ rules:
     confidence: medium
     attack: [T1005]
     threshold: {reads: 1}
-    threshold_text: "any read of /.env, /backup/*, id_rsa or /etc/shadow"
+    threshold_text: "any read of /.env, /backup/*, /.git, /.aws, /.ssh, id_rsa, /etc/passwd or /etc/shadow"
   R10:
     name: Kill-chain progression
     family: chain
@@ -81,6 +81,14 @@ rules:
     attack: []
     threshold: {families: 3}
     threshold_text: "3 or more families in order (recon, credential, misuse)"
+  R11:
+    name: Data-store abuse
+    family: exploit
+    weight: 30
+    confidence: high
+    attack: [T1190]
+    threshold: {commands: 1}
+    threshold_text: "any Redis CONFIG SET, SLAVEOF, REPLICAOF, MODULE LOAD, EVAL, EVALSHA, FLUSHALL, FLUSHDB, DEBUG or SCRIPT command"
 
 # Labels only: these never change a weight, threshold or verdict.
 technique_map:
@@ -97,6 +105,13 @@ technique_map:
     spring4shell: [T1190]
     shellshock: [T1190]
     ssrf: [T1190]
+  # R11 Redis command -> ATT&CK IDs. A hit carries the union for the commands actually seen.
+  r11_commands:
+    config_set: {ids: [T1190], pattern: "^\\s*config\\s+set\\b"}
+    replication: {ids: [T1190], pattern: "^\\s*(?:slaveof|replicaof)\\b"}
+    module_load: {ids: [T1190], pattern: "^\\s*module\\s+load\\b"}
+    script: {ids: [T1059], pattern: "^\\s*(?:eval|evalsha|script|debug)\\b"}
+    destroy: {ids: [T1485], pattern: "^\\s*(?:flushall|flushdb)\\b"}
   # R8 command category -> ATT&CK IDs and a regex (case-insensitive) on the command line.
   r8_categories:
     discovery:
@@ -185,6 +200,10 @@ lists:
     - /backup
     - id_rsa
     - /etc/shadow
+    - /etc/passwd
+    - /.git
+    - /.aws
+    - /.ssh
   discovery_commands:
     [whoami, id, uname, ls, pwd, cat, ps, env, hostname, ifconfig, ip, history, uptime, w, df, free]
   download_persistence:

@@ -215,6 +215,8 @@ def _r8_labels(commands: list[Event]) -> tuple[list[str], tuple[str, ...]]:
 
 
 def r8_post_login(session: Session) -> RuleHit | None:
+    if session.service != "ssh":  # Redis/FTP/MySQL commands are judged by R11, not here
+        return None
     commands = [e for e in session.events if e.action.value == "command"]
     discovery = set(load_config()["lists"]["discovery_commands"])
     danger = set(load_config()["lists"]["download_persistence"])
@@ -258,6 +260,38 @@ def r9_sensitive_files(session: Session) -> RuleHit | None:
     return _hit("R9", f"sensitive file read: {', '.join(sorted(targets)[:3])}", found)
 
 
+@lru_cache(maxsize=1)
+def _r11_commands() -> list[tuple[str, tuple[str, ...], re.Pattern[str]]]:
+    spec = load_config()["technique_map"]["r11_commands"]
+    return [(n, tuple(v["ids"]), re.compile(v["pattern"], re.IGNORECASE)) for n, v in spec.items()]
+
+
+def r11_data_store_abuse(session: Session) -> RuleHit | None:
+    if session.service != "redis":
+        return None
+    found: list[Event] = []
+    names: dict[str, None] = {}
+    ids: dict[str, None] = {}
+    for e in session.events:
+        if e.action.value != "command":
+            continue
+        text = str((e.request or {}).get("command", ""))
+        for name, technique_ids, pattern in _r11_commands():
+            if pattern.search(text):
+                if not found or found[-1] is not e:
+                    found.append(e)
+                names[name] = None
+                ids.update(dict.fromkeys(technique_ids))
+    if len(found) < _threshold("R11", "commands"):
+        return None
+    return _hit(
+        "R11",
+        f"{len(found)} risky Redis command(s) [{', '.join(names)}]",
+        found,
+        tuple(ids) or None,
+    )
+
+
 SESSION_RULES = (
     r2_path_enumeration,
     r3_brute_force,
@@ -267,6 +301,7 @@ SESSION_RULES = (
     r7_honeytoken_use,
     r8_post_login,
     r9_sensitive_files,
+    r11_data_store_abuse,
 )
 
 
