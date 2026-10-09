@@ -1,29 +1,40 @@
+{% from "_macros.html" import scorebar, verdict %}
 {% if rows %}
 <div class="table-wrap">
 <table>
   <thead><tr>
-    <th>Verdict</th><th>Score</th><th>Actor</th><th>Service</th><th>Source</th>
-    <th>Client</th><th>Rules</th><th>Model</th><th>Started</th><th>Review</th>
+    <th scope="col">Verdict</th><th scope="col">Score</th><th scope="col">Session</th><th scope="col">Actor</th>
+    <th scope="col">Rules</th><th scope="col">Model</th><th scope="col">Started</th><th scope="col">Review</th>
   </tr></thead>
   <tbody>
   {% for r in rows %}
   <tr>
-    <td><span class="badge verdict-{{ r.effective_verdict }}">{{ r.effective_verdict }}</span>
-      {% if r.effective_verdict != r.verdict %}<span class="muted">(this session alone: {{ r.verdict }})</span>{% endif %}</td>
-    <td>{{ r.score }}</td>
-    <td>{{ r.actor_id }}{% if r.actor_sessions > 1 %} <span class="muted">({{ r.actor_sessions }} sessions: {{ r.services|join(', ') }})</span>{% endif %}</td>
-    <td>{{ r.service }}</td>
-    <td>{{ r.src_ip }}</td>
-    <td>{{ r.agent }}</td>
-    <td>{{ r.rules|join(', ') }}</td>
-    <td>{% if r.ml_score is not none %}{{ '%.0f' % (r.ml_score * 100) }}%{% if r.disagrees %} <span class="badge">disagrees</span>{% endif %}{% else %}<span class="muted">no model</span>{% endif %}</td>
-    <td>{{ r.first_seen }}</td>
-    <td><a href="/session/{{ r.session_id }}">Open</a> <span class="muted">{{ r.label }}</span></td>
+    <td>{{ verdict(r.effective_verdict) }}
+      {% if r.effective_verdict != r.verdict %}<span class="promoted">alone: {{ r.verdict }}, raised by actor</span>{% endif %}</td>
+    <td>{{ scorebar(r.score, r.verdict) }}</td>
+    <td>
+      <a class="row-link" href="/session/{{ r.session_id }}"><span class="chip">{{ r.service }}</span> {{ r.src_ip }}</a>
+      <span class="cell-sub trunc" title="{{ r.agent }}">{{ r.agent or 'no user agent' }}</span>
+    </td>
+    <td><a class="mono" href="/actor/{{ r.actor_id }}">{{ r.actor_id[:12] }}</a>
+      {% if r.actor_sessions > 1 %}<span class="cell-sub">{{ r.actor_sessions }} sessions · {{ r.services|join(', ') }}</span>{% endif %}</td>
+    <td><div class="chips">{% for rule in r.rules %}<span class="chip rule">{{ rule }}</span>{% else %}<span class="muted">none</span>{% endfor %}</div></td>
+    <td>{% if r.ml_score is not none %}<span class="cell-main">{{ '%.0f' % (r.ml_score * 100) }}%</span>
+      {% if r.disagrees %}<span class="chip warn">disagrees</span>{% endif %}{% else %}<span class="muted">none</span>{% endif %}</td>
+    <td><span class="mono" title="{{ r.first_seen }}">{{ r.first_seen|when }}</span>
+      <span class="cell-sub">lasted {{ span(r.first_seen, r.last_seen) }}</span></td>
+    <td>{% if r.label == 'malicious' %}<span class="chip bad">malicious</span>{% elif r.label == 'benign' %}<span class="chip">benign</span>{% else %}<span class="muted small">unreviewed</span>{% endif %}</td>
   </tr>
   {% endfor %}
   </tbody>
 </table>
 </div>
+<div class="pager">
+  <span>Showing {{ pages.first }} to {{ pages.last }} of {{ pages.total }} sessions</span>
+  <span class="spacer"></span>
+  {% if pages.prev %}<a class="btn secondary sm" href="/?{{ pages.query }}{{ '&' if pages.query }}page={{ pages.prev }}">Previous</a>{% endif %}
+  {% if pages.next %}<a class="btn secondary sm" href="/?{{ pages.query }}{{ '&' if pages.query }}page={{ pages.next }}">Next</a>{% endif %}
+</div>
 {% else %}
-<p class="muted">No sessions match. If the decoys have been visited, press "Re-run correlation".</p>
+<div class="empty">No sessions match. If the decoys have been visited, press "Re-run correlation".</div>
 {% endif %}

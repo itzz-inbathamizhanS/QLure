@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% from "_macros.html" import scorebar, verdict %}
+{% block title %}Actor {{ a.actor_id }}{% endblock %}
+{% block topbar %}
+  <div>
+    <div class="crumbs"><a href="/actors">Actors</a><svg class="icon"><use href="#i-arrow"/></svg><span class="mono">{{ a.actor_id }}</span></div>
+    <h1>Actor {{ a.actor_id[:16] }}</h1>
+  </div>
+{% endblock %}
+{% block content %}
+<div class="stack">
+<section class="panel">
+  <div class="hero">
+    {% set circ = 326.73 %}
+    <svg class="gauge" viewBox="0 0 132 132" role="img" aria-label="Combined score {{ a.score }} of 100, {{ a.verdict }}">
+      <circle cx="66" cy="66" r="52" fill="none" stroke-width="12" class="g-track"/>
+      <circle cx="66" cy="66" r="52" fill="none" stroke-width="12" stroke-linecap="round" class="g-{{ a.verdict }}"
+        stroke-dasharray="{{ (([a.score, 100]|min) / 100 * circ)|round(2) }} {{ circ }}" transform="rotate(-90 66 66)"/>
+      <text x="66" y="72" text-anchor="middle" class="gauge-num">{{ a.score }}</text>
+      <text x="66" y="92" text-anchor="middle" class="gauge-sub">COMBINED</text>
+    </svg>
+    <div>
+      <div class="row">{{ verdict(a.verdict, 'lg') }}{% for r in a.rules %}<span class="chip rule">{{ r }}</span>{% endfor %}</div>
+      <dl class="facts">
+        <div class="fact"><dt>Sessions</dt><dd>{{ '{:,}'.format(a.sessions) }}</dd></div>
+        <div class="fact"><dt>Services</dt><dd>{{ a.services|join(', ') }}</dd></div>
+        <div class="fact"><dt>Source addresses</dt><dd class="mono">{{ a.ips|join(', ') }}</dd></div>
+        <div class="fact"><dt>First seen</dt><dd class="mono">{{ a.first_seen|when }}</dd></div>
+        <div class="fact"><dt>Active for</dt><dd>{{ span(a.first_seen, a.last_seen) }}</dd></div>
+        <div class="fact"><dt>Own verdicts</dt><dd>{{ a.counts.Noteworthy }} N · {{ a.counts.Suspicious }} S · {{ a.counts.Benign }} B</dd></div>
+      </dl>
+    </div>
+  </div>
+</section>
+
+<div class="grid-main">
+  <section class="panel" aria-labelledby="ae-h">
+    <div class="panel-head"><h2 id="ae-h">Why this actor's combined verdict</h2><span class="hint">every rule hit across all its sessions, deduplicated and scored once</span></div>
+    <div class="panel-body">{% if a.explanation %}<pre class="explain">{{ a.explanation }}</pre>{% else %}<p class="muted">No rule fired for this actor.</p>{% endif %}</div>
+  </section>
+  <section class="panel svc-bars" aria-labelledby="svc-h">
+    <div class="panel-head"><svg class="icon"><use href="#i-server"/></svg><h2 id="svc-h">Sessions by decoy</h2></div>
+    <div class="panel-body">
+      <svg viewBox="0 0 320 {{ a.by_service|length * 30 }}" role="img" aria-label="{% for b in a.by_service %}{{ b.service }} {{ b.count }}{% if not loop.last %}, {% endif %}{% endfor %}">
+        {% for b in a.by_service %}{% set y = loop.index0 * 30 %}
+        <text x="0" y="{{ y + 16 }}" class="svg-label">{{ b.service }}</text>
+        <rect x="56" y="{{ y + 6 }}" width="{{ [b.w, 2]|max }}" height="14" rx="3" class="f-accent"/>
+        <text x="{{ 62 + b.w }}" y="{{ y + 17 }}" class="svg-value">{{ '{:,}'.format(b.count) }}</text>
+        {% endfor %}
+      </svg>
+    </div>
+  </section>
+</div>
+
+<section class="panel" aria-labelledby="as-h">
+  <div class="panel-head"><h2 id="as-h">Sessions in order</h2><span class="hint">{{ a.session_rows|length }} sessions{% if a.session_rows|length > 200 %}, first 200 shown{% endif %}</span></div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th scope="col">Started</th><th scope="col">Service</th><th scope="col">Own verdict</th><th scope="col">Score</th><th scope="col">Rules</th><th scope="col">Client</th></tr></thead>
+    <tbody>
+    {% for r in a.session_rows[:200] %}
+    <tr>
+      <td><a class="mono" href="/session/{{ r.session_id }}">{{ r.first_seen|when }}</a></td>
+      <td><span class="chip">{{ r.service }}</span></td>
+      <td>{{ verdict(r.verdict) }}</td>
+      <td>{{ scorebar(r.score, r.verdict) }}</td>
+      <td><div class="chips">{% for rule in r.rules %}<span class="chip rule">{{ rule }}</span>{% else %}<span class="muted">none</span>{% endfor %}</div></td>
+      <td><span class="cell-sub trunc" title="{{ r.agent }}">{{ r.agent or 'no user agent' }}</span></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+</div>
+{% endblock %}

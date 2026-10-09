@@ -12,7 +12,7 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -32,6 +32,27 @@ CSP = (
     "connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 )
 LABELS = ("benign", "malicious")
+PAGE = 100
+
+
+def _when(value: str | None) -> str:
+    """ISO time as 'YYYY-MM-DD HH:MM:SS' (UTC) for tables; the full value stays in title=."""
+    if not value:
+        return ""
+    return str(value).replace("T", " ")[:19]
+
+
+def _span(first: str | None, last: str | None) -> str:
+    if not first or not last:
+        return ""
+    seconds = int((datetime.fromisoformat(last) - datetime.fromisoformat(first)).total_seconds())
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m {seconds % 60}s"
+    return f"{seconds // 3600}h {seconds % 3600 // 60}m"
+
+
 LIST_FIELDS = {"allowlist.ips", "allowlist.user_agents"}
 
 
@@ -52,6 +73,8 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
     if auth.generated:
         print(f"Dashboard password (set QLURE_DASHBOARD_PASSWORD to choose one): {auth.password}")
     templates = Jinja2Templates(directory=HERE / "templates")
+    templates.env.filters["when"] = _when
+    templates.env.globals["span"] = _span
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     app.state.auth = auth
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
@@ -61,6 +84,7 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
 
     def page(request: Request, name: str, status: int = 200, **context: Any) -> Response:
         context.setdefault("judge_mode", cfg.load_settings()["judge_mode"])
+        context.setdefault("nav", "")
         return templates.TemplateResponse(request, name, context, status_code=status)
 
     @app.middleware("http")
@@ -105,18 +129,45 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
 
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request) -> Response:
-        filters = {k: v for k, v in request.query_params.items() if v}
+        filters = {k: v for k, v in request.query_params.items() if v and k != "page"}
+        raw_page = request.query_params.get("page", "1")
+        page_no = max(int(raw_page), 1) if raw_page.isdigit() else 1
         c = conn()
         rows = data.list_findings(c, filters)
-        template = "_results.html" if request.headers.get("hx-request") else "index.html"
+        shown = rows[(page_no - 1) * PAGE : page_no * PAGE]
+        pages = {
+            "no": page_no,
+            "total": len(rows),
+            "first": (page_no - 1) * PAGE + 1 if shown else 0,
+            "last": (page_no - 1) * PAGE + len(shown),
+            "prev": page_no - 1 if page_no > 1 else None,
+            "next": page_no + 1 if page_no * PAGE < len(rows) else None,
+            "query": urlencode(filters),
+        }
+        if request.headers.get("hx-request"):
+            return page(request, "_results.html", rows=shown, pages=pages, filters=filters)
         return page(
             request,
-            template,
-            rows=rows,
+            "index.html",
+            nav="sessions",
+            rows=shown,
+            pages=pages,
             filters=filters,
             options=data.filter_options(c),
             pqc=data.pqc_share(c),
+            stats=data.overview(c),
         )
+
+    @app.get("/actors", response_class=HTMLResponse)
+    async def actors(request: Request) -> Response:
+        return page(request, "actors.html", nav="actors", actors=data.list_actors(conn()))
+
+    @app.get("/actor/{actor_id}", response_class=HTMLResponse)
+    async def actor_view(request: Request, actor_id: str) -> Response:
+        detail = data.actor_detail(conn(), actor_id)
+        if detail is None:
+            return page(request, "missing.html", status=404)
+        return page(request, "actor.html", nav="actors", a=detail)
 
     @app.post("/refresh")
     async def refresh() -> Response:
@@ -128,7 +179,14 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
         detail = data.session_detail(conn(), session_id)
         if detail is None:
             return page(request, "missing.html", status=404)
-        return page(request, "session.html", s=detail)
+        settings = cfg.load_settings()["rules"]
+        return page(
+            request,
+            "session.html",
+            nav="sessions",
+            s=detail,
+            marks={"suspicious": settings["suspicious"], "noteworthy": settings["noteworthy"]},
+        )
 
     @app.post("/session/{session_id}/label")
     async def label_session(request: Request, session_id: str) -> Response:
@@ -198,6 +256,7 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
         return page(
             request,
             "config.html",
+            nav="settings",
             s=cfg.load_settings(),
             approved_ports=cfg.APPROVED_PORTS,
             rule_ids=[f"R{i}" for i in range(1, 11)],

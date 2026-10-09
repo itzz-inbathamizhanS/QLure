@@ -9,18 +9,30 @@
 <script src="/static/htmx.min.js" defer></script>
 </head>
 <body>
-{% block header %}
-<header>
-  <strong>Q-Lure</strong>
-  <a href="/">Sessions</a>
-  <a href="/config">Settings</a>
-  <span class="spacer"></span>
-  {% if judge_mode %}<span class="badge">Judge mode: read-only</span>{% endif %}
-  <form method="post" action="/logout"><button class="secondary" type="submit">Log out</button></form>
-</header>
+{% include "_icons.html" %}
+{% block body %}
+<div class="shell">
+  <aside class="sidebar">
+    {% include "_brand.html" %}
+    <div class="nav-label">Investigate</div>
+    <nav class="nav" aria-label="Main">
+      <a href="/" {% if nav == 'sessions' %}aria-current="page"{% endif %}><svg class="icon"><use href="#i-sessions"/></svg>Sessions</a>
+      <a href="/actors" {% if nav == 'actors' %}aria-current="page"{% endif %}><svg class="icon"><use href="#i-actors"/></svg>Actors</a>
+      <a href="/config" {% if nav == 'settings' %}aria-current="page"{% endif %}><svg class="icon"><use href="#i-settings"/></svg>Settings</a>
+    </nav>
+    <div class="sidebar-foot">
+      {% if judge_mode %}<div class="judge"><svg class="icon"><use href="#i-lock"/></svg>Judge mode: read-only</div>{% endif %}
+      <div class="status-card"><span class="pulse"></span><strong>Decoys isolated</strong><br>Internal network, no outbound route. Localhost only.</div>
+      <form method="post" action="/logout"><button class="ghost sm" type="submit"><svg class="icon"><use href="#i-logout"/></svg>Log out</button></form>
+    </div>
+  </aside>
+  <div class="main">
+    <div class="topbar">{% block topbar %}{% endblock %}</div>
+    <main class="content">
+    {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
 {% endblock %}
-<main>
-{% block content %}{% endblock %}
-</main>
 </body>
 </html>

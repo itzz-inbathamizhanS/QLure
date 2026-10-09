@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Not found{% endblock %}
+{% block topbar %}<div class="crumbs"><a href="/">Sessions</a></div>{% endblock %}
 {% block content %}
-<h1>Not found</h1>
-<p>That session is not in the store. <a href="/">Back to the list</a>.</p>
+<div class="panel empty">
+  <h1>Not found</h1>
+  <p>That session or actor is not in the store. <a href="/">Back to the list</a>.</p>
+</div>
 {% endblock %}

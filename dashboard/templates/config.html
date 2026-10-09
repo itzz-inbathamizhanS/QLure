@@ -1,85 +1,122 @@
 {% extends "base.html" %}
 {% block title %}Q-Lure settings{% endblock %}
+{% block topbar %}<div><h1>Settings</h1><p class="muted small">Only safe settings exist. Every change, accepted or refused, is audited and can be undone.</p></div>{% endblock %}
 {% block content %}
-<h1>Settings</h1>
-{% if message %}<p class="{{ 'notice good' if ok else 'banner' }}">{{ message }}</p>{% endif %}
-{% if judge_mode %}<p class="banner">Judge mode is on. Only the judge mode switch can be changed.</p>{% endif %}
-<p class="muted">Only safe settings exist. There is no setting for outbound network access,
-command execution, executable uploads or host folders. Port changes apply on the next restart of the decoys.</p>
-<form method="post" action="/config">
+<div class="stack">
+{% if message %}<div class="callout {{ 'good' if ok else 'bad' }}" role="status"><svg class="icon"><use href="#{{ 'i-check' if ok else 'i-alert' }}"/></svg>{{ message }}</div>{% endif %}
+{% if judge_mode %}<div class="callout warn"><svg class="icon"><use href="#i-lock"/></svg>Judge mode is on. Only the judge mode switch can be changed.</div>{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><svg class="icon"><use href="#i-shield"/></svg><h2>Not configurable, by design</h2></div>
+  <div class="panel-body guard">
+    <div><svg class="icon"><use href="#i-ban"/></svg>Outbound network access</div>
+    <div><svg class="icon"><use href="#i-ban"/></svg>Command execution</div>
+    <div><svg class="icon"><use href="#i-ban"/></svg>Executable uploads</div>
+    <div><svg class="icon"><use href="#i-ban"/></svg>Host folders</div>
+  </div>
+</section>
+
+<form method="post" action="/config" class="stack">
 <div class="grid-2">
-<div class="panel">
-  <h2>Decoys</h2>
-  {% for name, d in s.decoys.items() %}
-  <div class="row">
-    <label>{{ name }} on
-      <select name="decoys.{{ name }}.port">
-        {% for p in approved_ports[name] %}<option value="{{ p }}" {{ 'selected' if p == d.port }}>{{ p }}</option>{% endfor %}
-      </select></label>
-    <label>enabled
-      <select name="decoys.{{ name }}.enabled">
-        <option value="true" {{ 'selected' if d.enabled }}>yes</option>
-        <option value="false" {{ 'selected' if not d.enabled }}>no</option>
-      </select></label>
+  <section class="panel">
+    <div class="panel-head"><svg class="icon"><use href="#i-server"/></svg><h2>Decoys</h2><span class="hint">port changes apply on the next restart</span></div>
+    <div class="panel-body">
+    {% for name, d in s.decoys.items() %}
+      <div class="decoy-row">
+        <span class="decoy-name"><span class="pulse"></span>{{ name }}</span>
+        <label>Port
+          <select name="decoys.{{ name }}.port">
+            {% for p in approved_ports[name] %}<option value="{{ p }}" {{ 'selected' if p == d.port }}>{{ p }}</option>{% endfor %}
+          </select></label>
+        <label>Enabled
+          <select name="decoys.{{ name }}.enabled">
+            <option value="true" {{ 'selected' if d.enabled }}>Yes</option>
+            <option value="false" {{ 'selected' if not d.enabled }}>No</option>
+          </select></label>
+      </div>
+    {% endfor %}
+    </div>
+    <div class="panel-foot">Only ports from the approved list are offered. Ports below 1024 and 9000 are refused.</div>
+  </section>
+
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Fake content</h2><span class="hint">shown to visitors by the web and FTP decoys</span></div>
+      <div class="panel-body form-grid">
+        <label>Company name <input type="text" name="content.company_name" value="{{ s.content.company_name }}"></label>
+        <label>FTP banner <input type="text" name="content.ftp_banner" value="{{ s.content.ftp_banner }}"></label>
+      </div>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><svg class="icon"><use href="#i-lock"/></svg><h2>Mode and retention</h2></div>
+      <div class="panel-body form-grid">
+        <label>Judge mode (read-only)
+          <select name="judge_mode">
+            <option value="false" {{ 'selected' if not s.judge_mode }}>Off</option>
+            <option value="true" {{ 'selected' if s.judge_mode }}>On</option>
+          </select></label>
+        <label>Keep data for (days) <input type="text" inputmode="numeric" name="retention_days" value="{{ s.retention_days }}"></label>
+      </div>
+    </section>
   </div>
-  {% endfor %}
-  <p class="muted">Only ports from the approved list are offered. Ports below 1024 and 9000 are refused.</p>
 </div>
-<div class="panel">
-  <h2>Fake content</h2>
-  <label>Company name <input type="text" name="content.company_name" value="{{ s.content.company_name }}"></label>
-  <label>FTP banner <input type="text" name="content.ftp_banner" value="{{ s.content.ftp_banner }}"></label>
-  <h2>Mode</h2>
-  <label>Judge mode (read-only)
-    <select name="judge_mode">
-      <option value="false" {{ 'selected' if not s.judge_mode }}>off</option>
-      <option value="true" {{ 'selected' if s.judge_mode }}>on</option>
-    </select></label>
-  <label>Keep data for (days) <input type="text" name="retention_days" value="{{ s.retention_days }}"></label>
-</div>
-</div>
-<div class="panel">
-  <h2>Scoring</h2>
-  <div class="row">
-    <label>Suspicious from <input type="text" name="rules.suspicious" value="{{ s.rules.suspicious }}"></label>
-    <label>Noteworthy from <input type="text" name="rules.noteworthy" value="{{ s.rules.noteworthy }}"></label>
+
+<section class="panel">
+  <div class="panel-head"><h2>Scoring</h2><span class="hint">weights, thresholds and the allowlist apply at once</span></div>
+  <div class="panel-body stack">
+    <div class="form-grid">
+      <label>Suspicious from <input type="text" inputmode="numeric" name="rules.suspicious" value="{{ s.rules.suspicious }}"></label>
+      <label>Noteworthy from <input type="text" inputmode="numeric" name="rules.noteworthy" value="{{ s.rules.noteworthy }}"></label>
+    </div>
+    <div>
+      <p class="small muted">Rule weights (blank keeps the default)</p>
+      <div class="weights">
+      {% for rid in rule_ids %}
+        <label><span class="rule-id">{{ rid }}</span> <input type="text" inputmode="numeric" name="rules.weights.{{ rid }}" value="{{ s.rules.weights.get(rid, '') }}" placeholder="default"></label>
+      {% endfor %}
+      </div>
+    </div>
   </div>
-  <p class="muted">Rule weights (blank keeps the default):</p>
-  <div class="row">
-  {% for rid in rule_ids %}
-    <label>{{ rid }} <input type="text" name="rules.weights.{{ rid }}" value="{{ s.rules.weights.get(rid, '') }}"></label>
-  {% endfor %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>Allowlist</h2><span class="hint">trusted visitors are scored but never flagged</span></div>
+  <div class="panel-body grid-2">
+    <label>Trusted IP addresses (one per line)
+      <textarea name="allowlist.ips" rows="3">{{ s.allowlist.ips|join('\n') }}</textarea></label>
+    <label>Trusted user agents (one per line)
+      <textarea name="allowlist.user_agents" rows="3">{{ s.allowlist.user_agents|join('\n') }}</textarea></label>
   </div>
+</section>
+
+<div class="save-bar noprint">
+  <span class="small muted">Changes are checked against the safe list before they are saved.</span>
+  <span class="spacer"></span>
+  <button type="submit">Save changes</button>
 </div>
-<div class="panel">
-  <h2>Allowlist</h2>
-  <label>Trusted IP addresses (one per line)
-    <textarea name="allowlist.ips" rows="3">{{ s.allowlist.ips|join('\n') }}</textarea></label>
-  <label>Trusted user agents (one per line)
-    <textarea name="allowlist.user_agents" rows="3">{{ s.allowlist.user_agents|join('\n') }}</textarea></label>
-</div>
-<button type="submit">Save changes</button>
 </form>
 
-<div class="panel">
-  <h2>Change history</h2>
+<section class="panel">
+  <div class="panel-head"><h2>Change history</h2><span class="hint">last 30 changes</span></div>
   <div class="table-wrap">
   <table>
-    <thead><tr><th>When</th><th>Who</th><th>Setting</th><th>From</th><th>To</th><th>Result</th><th></th></tr></thead>
+    <thead><tr><th scope="col">When</th><th scope="col">Who</th><th scope="col">Setting</th><th scope="col">From</th><th scope="col">To</th><th scope="col">Result</th><th scope="col"><span class="sr-only">Undo</span></th></tr></thead>
     <tbody>
     {% for a in audit %}
     <tr>
-      <td>{{ a.ts }}</td><td>{{ a.who }}</td><td>{{ a.key }}</td>
-      <td>{{ a.old_value }}</td><td>{{ a.new_value }}</td>
-      <td>{{ a.outcome }}{% if a.reason %}: {{ a.reason }}{% endif %}</td>
+      <td class="mono">{{ a.ts|when }}</td><td>{{ a.who }}</td><td class="mono">{{ a.key }}</td>
+      <td class="mono">{{ a.old_value }}</td><td class="mono">{{ a.new_value }}</td>
+      <td>{% if a.outcome == 'applied' %}<span class="chip accent">applied</span>{% else %}<span class="chip bad">{{ a.outcome }}</span>{% endif %}
+        {% if a.reason %}<span class="cell-sub">{{ a.reason }}</span>{% endif %}</td>
       <td>{% if a.outcome == 'applied' and not judge_mode %}
-        <form method="post" action="/config/rollback/{{ a.audit_id }}"><button class="secondary" type="submit">Undo</button></form>
+        <form method="post" action="/config/rollback/{{ a.audit_id }}"><button class="secondary sm" type="submit">Undo</button></form>
         {% endif %}</td>
     </tr>
-    {% else %}<tr><td colspan="7" class="muted">No changes yet.</td></tr>
+    {% else %}<tr><td colspan="7" class="empty">No changes yet.</td></tr>
     {% endfor %}
     </tbody>
   </table>
   </div>
+</section>
 </div>
 {% endblock %}

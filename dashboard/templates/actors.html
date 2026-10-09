@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% from "_macros.html" import scorebar, verdict %}
+{% block title %}Q-Lure actors{% endblock %}
+{% block topbar %}<div><h1>Actors</h1><p class="muted small">Sessions joined by shared evidence: a client fingerprint, a cookie or a honeytoken passed between decoys. An IP address alone never links them.</p></div>{% endblock %}
+{% block content %}
+<section class="panel">
+{% if actors %}
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">Verdict</th><th scope="col">Combined score</th><th scope="col">Actor</th><th scope="col">Sessions</th>
+    <th scope="col">Services</th><th scope="col">Rules seen</th><th scope="col">Active</th></tr></thead>
+  <tbody>
+  {% for a in actors %}
+  <tr>
+    <td>{{ verdict(a.verdict) }}</td>
+    <td>{{ scorebar(a.score, a.verdict) }}</td>
+    <td><a class="row-link mono" href="/actor/{{ a.actor_id }}">{{ a.actor_id[:16] }}</a><span class="cell-sub">{{ a.ips|join(', ') }}</span></td>
+    <td class="num"><span class="cell-main">{{ '{:,}'.format(a.sessions) }}</span>
+      <span class="cell-sub">{% if a.counts.Noteworthy %}{{ a.counts.Noteworthy }} noteworthy{% elif a.counts.Suspicious %}{{ a.counts.Suspicious }} suspicious{% else %}all benign alone{% endif %}</span></td>
+    <td><div class="chips">{% for s in a.services %}<span class="chip">{{ s }}</span>{% endfor %}</div></td>
+    <td><div class="chips">{% for r in a.rules %}<span class="chip rule">{{ r }}</span>{% else %}<span class="muted">none</span>{% endfor %}</div></td>
+    <td><span class="mono">{{ a.first_seen|when }}</span><span class="cell-sub">for {{ span(a.first_seen, a.last_seen) }}</span></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}<div class="empty">No actors yet.</div>{% endif %}
+</section>
+{% endblock %}

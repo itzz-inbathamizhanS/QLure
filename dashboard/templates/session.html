@@ -1,102 +1,194 @@
 {% extends "base.html" %}
+{% from "_macros.html" import verdict %}
 {% block title %}Session {{ s.session_id }}{% endblock %}
-{% block content %}
-<div class="row">
-  <h1>Session <span class="muted">{{ s.session_id }}</span></h1>
+{% set shown_score = s.actor_score if s.effective_verdict != s.verdict else s.score %}
+{% block topbar %}
+  <div>
+    <div class="crumbs"><a href="/">Sessions</a><svg class="icon"><use href="#i-arrow"/></svg><span class="mono">{{ s.session_id }}</span></div>
+    <h1>{{ s.service|upper }} session from {{ s.src_ip }}</h1>
+  </div>
   <span class="spacer"></span>
-  <span class="badge verdict-{{ s.effective_verdict }}">{{ s.effective_verdict }} · {{ s.actor_score if s.effective_verdict != s.verdict else s.score }}</span>
-</div>
-<p class="muted">{{ s.service }} · {{ s.src_ip }} · actor {{ s.actor_id }} · {{ s.first_seen }} to {{ s.last_seen }}</p>
+  <div class="row noprint">
+    <a class="btn secondary" href="/session/{{ s.session_id }}/evidence.json"><svg class="icon"><use href="#i-download"/></svg>Evidence file (JSON)</a>
+    <a class="btn secondary" href="/session/{{ s.session_id }}/report"><svg class="icon"><use href="#i-print"/></svg>Printable report</a>
+  </div>
+{% endblock %}
+{% block content %}
+<div class="stack">
 
-{% if s.actor_verdict != s.verdict or s.actor_score != s.score %}
-<div class="panel">
-  <h2>This actor overall</h2>
-  <p>This one session scores <strong>{{ s.verdict }} ({{ s.score }})</strong> on its own.
-    Combined with everything else this actor did, across all its sessions, it is
-    <strong>{{ s.actor_verdict }} ({{ s.actor_score }})</strong>.</p>
-  <pre class="explanation">{{ s.actor_explanation }}</pre>
-</div>
-{% endif %}
+<section class="panel">
+  <div class="hero">
+    {% set circ = 326.73 %}
+    <svg class="gauge" viewBox="0 0 132 132" role="img" aria-label="Score {{ shown_score }} of 100, {{ s.effective_verdict }}">
+      <circle cx="66" cy="66" r="52" fill="none" stroke-width="12" class="g-track"/>
+      <circle cx="66" cy="66" r="52" fill="none" stroke-width="12" stroke-linecap="round" class="g-{{ s.effective_verdict }}"
+        stroke-dasharray="{{ (([shown_score, 100]|min) / 100 * circ)|round(2) }} {{ circ }}" transform="rotate(-90 66 66)"/>
+      <text x="66" y="72" text-anchor="middle" class="gauge-num">{{ shown_score }}</text>
+      <text x="66" y="92" text-anchor="middle" class="gauge-sub">OF 100</text>
+    </svg>
+    <div>
+      <div class="row">{{ verdict(s.effective_verdict, 'lg') }}
+        {% for f in s.hits|map(attribute='family')|unique %}<span class="fam fam-{{ f }}">{{ f }}</span>{% endfor %}
+        {% if s.label != 'unreviewed' %}<span class="chip {{ 'bad' if s.label == 'malicious' }}">reviewed: {{ s.label }}</span>{% endif %}
+      </div>
+      <dl class="facts">
+        <div class="fact"><dt>Rules fired</dt><dd>{{ s.hits|length }}</dd></div>
+        <div class="fact"><dt>Events</dt><dd>{{ s.events|length }}</dd></div>
+        <div class="fact"><dt>Started</dt><dd class="mono">{{ s.first_seen|when }}</dd></div>
+        <div class="fact"><dt>Lasted</dt><dd>{{ span(s.first_seen, s.last_seen) }}</dd></div>
+        <div class="fact"><dt>Actor</dt><dd><a class="mono" href="/actor/{{ s.actor_id }}">{{ s.actor_id[:16] }}</a></dd></div>
+        <div class="fact"><dt>Client fingerprint</dt><dd class="mono">{{ (s.client_fp or 'none')[:16] }}</dd></div>
+      </dl>
+    </div>
+  </div>
+  {% if s.actor_verdict != s.verdict or s.actor_score != s.score %}
+  <div class="panel-body">
+    <div class="callout {{ 'warn' if s.effective_verdict != s.verdict else 'info' }}"><svg class="icon"><use href="#i-actors"/></svg>
+      <div>This session on its own scores <b>{{ s.verdict }} ({{ s.score }})</b>. Combined with everything else
+      <a href="/actor/{{ s.actor_id }}">this actor</a> did across its sessions, it is <b>{{ s.actor_verdict }} ({{ s.actor_score }})</b>.</div>
+    </div>
+  </div>
+  {% endif %}
+</section>
 
-<div class="panel">
-  <h2>Why this session's own verdict</h2>
-  <pre class="explanation">{{ s.explanation }}</pre>
-  {% if s.suppressors %}
-  <p class="muted">Lowered by:
-    {% for name, amount in s.suppressors %}{{ name }} (-{{ amount }}){% if not loop.last %}, {% endif %}{% endfor %}
-  </p>
+<div class="grid-main">
+<div class="stack">
+  <section class="panel" aria-labelledby="why-h">
+    <div class="panel-head"><h2 id="why-h">Why this session's own verdict</h2><span class="hint">every rule, its threshold, what was measured and the events that prove it</span></div>
+    <div class="panel-body">
+      {% if s.hits %}
+      <div class="breakdown">
+        <svg viewBox="0 0 600 54" role="img" aria-label="Score built from rule weights: {% for h in s.hits %}{{ h.rule_id }} {{ h.weight }}{% if not loop.last %}, {% endif %}{% endfor %}">
+          <rect x="0" y="14" width="600" height="18" rx="4" class="f-track"/>
+          {% for seg in s.segments.runs %}<rect x="{{ seg.x|round(1) }}" y="14" width="{{ seg.w|round(1) }}" height="18" class="f-{{ seg.family }} s-panel" stroke-width="2"/>
+          {% if seg.w > 34 %}<text x="{{ (seg.x + seg.w / 2)|round(1) }}" y="27" text-anchor="middle" class="svg-value">{{ seg.rule_id }}</text>{% endif %}{% endfor %}
+          {% for name, at in (('Suspicious', marks.suspicious), ('Noteworthy', marks.noteworthy)) %}
+          {% set mx = (at * s.segments.scale)|round(1) %}
+          <line x1="{{ mx }}" x2="{{ mx }}" y1="8" y2="38" class="mark-line"/>
+          <text x="{{ mx }}" y="50" text-anchor="middle" class="svg-muted">{{ name }} {{ at }}</text>
+          {% endfor %}
+          {% if s.segments.total > 100 %}<line x1="{{ s.segments.cap|round(1) }}" x2="{{ s.segments.cap|round(1) }}" y1="8" y2="38" class="mark-line"/>
+          <text x="{{ [s.segments.cap, 560]|min|round(1) }}" y="50" text-anchor="middle" class="svg-muted">cap 100</text>{% endif %}
+        </svg>
+        <p class="small muted">Rule weights add up to the score{% if s.segments.total > 100 %} ({{ s.segments.total }} here, capped at 100){% endif %}{% if s.suppressors %}, then suppressors lower it{% endif %}. Noteworthy also needs two rule families or one high-confidence rule.</p>
+      </div>
+      {% endif %}
+      <div class="rules">
+      {% for h in s.hits %}
+        <article class="rule fam-{{ h.family }}">
+          <div class="rule-stripe"></div>
+          <div class="rule-body">
+            <div class="rule-title">
+              <span class="rule-id">{{ h.rule_id }}</span><strong>{{ h.name }}</strong>
+              <span class="fam fam-{{ h.family }}">{{ h.family }}</span>
+              <span class="chip {{ 'bad' if h.confidence == 'high' }}">{{ h.confidence }} confidence</span>
+              {% for t in h.attack %}<span class="chip mono">ATT&amp;CK {{ t }}</span>{% endfor %}
+              <span class="weight">+{{ h.weight }}</span>
+            </div>
+            <div class="compare">
+              <div><div class="k">Rule needs</div><div class="v">{{ h.threshold }}</div></div>
+              <div class="saw"><div class="k">Q-Lure saw</div><div class="v">{{ h.measured }}</div></div>
+            </div>
+            <div class="evidence-links"><svg class="icon"><use href="#i-chain"/></svg>{{ h.evidence|length }} evidence event{{ 's' if h.evidence|length != 1 }}:
+              {% for ev in h.evidence[:8] %}<a href="#ev-{{ ev }}">{{ ev[:8] }}</a>{% endfor %}{% if h.evidence|length > 8 %}<span>+{{ h.evidence|length - 8 }} more</span>{% endif %}
+            </div>
+          </div>
+        </article>
+      {% else %}
+        <div class="callout good"><svg class="icon"><use href="#i-check"/></svg>No rule fired on this session.</div>
+      {% endfor %}
+      </div>
+      {% if s.suppressors %}
+      <p class="small muted">Lowered by:
+        {% for name, amount in s.suppressors %}<span class="chip">{{ name }} −{{ amount }}</span> {% endfor %}</p>
+      {% endif %}
+      <details class="raw"><summary>Plain-text explanation, exactly as exported</summary><pre>{{ s.explanation }}</pre></details>
+    </div>
+  </section>
+
+  <form method="post" action="/session/{{ s.session_id }}/label">
+  <section class="panel" aria-labelledby="tl-h">
+    <div class="panel-head"><h2 id="tl-h">Timeline</h2><span class="hint">{{ s.events|length }} events, hash-chained. Tick the events that prove your label.</span></div>
+    <ol class="timeline">
+    {% for e in s.events %}
+      {% if e.gap %}<li class="tl gap">{{ e.gap }} seconds pass</li>{% endif %}
+      <li class="tl family-{{ e.family }}" id="ev-{{ e.event.event_id }}">
+        <div class="tl-head">
+          <label class="tl-pick">
+            <input type="checkbox" name="evidence" value="{{ e.event.event_id }}" {{ 'checked' if e.event.event_id in s.evidence_marked }}>
+            <span class="tl-time">{{ e.event.ts.strftime('%H:%M:%S.%f')[:12] }}</span>
+            <span class="tl-action">{{ e.event.action.value|replace('_', ' ') }}</span>
+          </label>
+          <span class="tl-summary">{{ e.summary }}</span>
+        </div>
+        <div class="tl-meta">
+          {% for r in e.rules|unique %}<span class="chip rule">{{ r }}</span>{% endfor %}
+          {% for f in e.families %}<span class="fam fam-{{ f }}">{{ f }}</span>{% endfor %}
+          {% if e.event.honeytoken_id %}<span class="chip bad"><svg class="icon"><use href="#i-key"/></svg>honeytoken {{ e.event.honeytoken_id }}</span>{% endif %}
+          {% if e.event.response and e.event.response.status %}<span class="chip mono">{{ e.event.response.status }}</span>{% endif %}
+          <details class="raw"><summary>Raw event and hashes</summary>
+            <pre>{{ e.raw }}</pre>
+            <div class="hashes">prev {{ e.prev_hash }}<br>hash {{ e.hash }}</div>
+          </details>
+        </div>
+      </li>
+    {% endfor %}
+    </ol>
+    <div class="panel-foot row noprint">
+      <span>Current label: <b>{{ s.label }}</b></span>
+      <span class="spacer"></span>
+      {% if judge_mode %}<span class="chip warn">Judge mode is on, labels are read-only</span>{% endif %}
+      <button type="submit" name="label" value="malicious" class="danger" {{ 'disabled' if judge_mode }}>Mark malicious</button>
+      <button type="submit" name="label" value="benign" class="good" {{ 'disabled' if judge_mode }}>Mark benign</button>
+    </div>
+  </section>
+  </form>
+</div>
+
+<div class="stack">
+  <section class="panel" aria-labelledby="ml-h">
+    <div class="panel-head"><svg class="icon"><use href="#i-model"/></svg><h2 id="ml-h">Model second opinion</h2></div>
+    <div class="panel-body">
+    {% if s.ml_score is not none %}
+      {% set pct = (s.ml_score * 100)|round|int %}
+      <div class="meter"><span class="meter-num">{{ pct }}%</span><span class="muted small">like the malicious sessions it learned from</span></div>
+      <svg viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true">
+        <rect width="100" height="10" rx="5" class="f-track"/>
+        <rect width="{{ pct }}" height="10" rx="5" class="{{ 'f-Noteworthy' if pct >= 80 else ('f-Suspicious' if pct >= 20 else 'f-Benign') }}"/>
+      </svg>
+      {% if s.ml_factors %}
+      <h3 class="muted small">Biggest factors</h3>
+      <ul class="factors">
+        {% for f in s.ml_factors %}<li><span class="fname">{{ f.name }}</span><span class="mono muted">{{ f.value }}</span><span class="dir to-{{ f.toward }}">→ {{ f.toward }}</span></li>{% endfor %}
+      </ul>
+      {% endif %}
+      {% if s.disagrees %}<div class="callout warn"><svg class="icon"><use href="#i-alert"/></svg>The model and the rules disagree about this session. Look at it yourself.</div>{% endif %}
+      <p class="small muted">Behaviour only: counts, rates and ratios. It never changes the verdict or the score.</p>
+    {% else %}
+      <p class="muted small">No model trained yet. Train one from labelled tuning captures with <code>qlure ml train captures/tuning</code>.</p>
+    {% endif %}
+    </div>
+  </section>
+
+  {% if s.linked %}
+  <section class="panel" aria-labelledby="linked-h">
+    <div class="panel-head"><h2 id="linked-h">Same actor, other sessions</h2><span class="hint">{{ s.linked|length }}</span></div>
+    <ul class="linked">
+    {% for l in s.linked[:12] %}
+      <li><span class="chip">{{ l.service }}</span><a href="/session/{{ l.session_id }}" class="mono small">{{ l.session_id[:14] }}</a><span class="spacer"></span>{{ verdict(l.verdict) }}<b class="small">{{ l.score }}</b></li>
+    {% endfor %}
+    </ul>
+    {% if s.linked|length > 12 %}<div class="panel-foot"><a href="/actor/{{ s.actor_id }}">All {{ s.linked|length + 1 }} sessions of this actor</a></div>{% endif %}
+  </section>
+  {% endif %}
+
+  {% if s.actor_explanation and (s.actor_verdict != s.verdict or s.actor_score != s.score) %}
+  <section class="panel" aria-labelledby="actor-h">
+    <div class="panel-head"><svg class="icon"><use href="#i-actors"/></svg><h2 id="actor-h">This actor overall</h2></div>
+    <div class="panel-body"><pre class="explain">{{ s.actor_explanation }}</pre></div>
+  </section>
   {% endif %}
 </div>
-
-<div class="panel">
-  <h2>Model second opinion</h2>
-  {% if s.ml_score is not none %}
-  <p>{{ s.ml_why }}</p>
-  {% if s.disagrees %}<p class="banner">The model and the rules disagree about this session. Look at it yourself.</p>{% endif %}
-  <p class="muted">The model learned from labelled captures. It never changes the verdict or the score.</p>
-  {% else %}
-  <p class="muted">No model trained yet. Train one from labelled tuning captures with <code>qlure ml train captures/tuning</code>.</p>
-  {% endif %}
 </div>
-
-{% if s.hits %}
-<div class="cards">
-  {% for h in s.hits %}
-  <div class="card family-{{ h.family }}">
-    <strong>{{ h.rule_id }} {{ h.name }}</strong>
-    <span class="chip">{{ h.family }}</span> <span class="chip">{{ h.confidence }} confidence</span>
-    <p>Needs: {{ h.threshold }}<br>Saw: {{ h.measured }}</p>
-    <p class="muted">Evidence: {{ h.evidence|length }} events</p>
-  </div>
-  {% endfor %}
 </div>
-{% endif %}
-
-{% if s.linked %}
-<div class="panel">
-  <h2>Same actor, other sessions</h2>
-  <ul>
-  {% for l in s.linked %}
-    <li><a href="/session/{{ l.session_id }}">{{ l.service }} session</a>
-      <span class="badge verdict-{{ l.verdict }}">{{ l.verdict }} · {{ l.score }}</span></li>
-  {% endfor %}
-  </ul>
-</div>
-{% endif %}
-
-<form method="post" action="/session/{{ s.session_id }}/label">
-<div class="panel">
-  <h2>Timeline <span class="muted">({{ s.events|length }} events)</span></h2>
-  <ol class="timeline">
-  {% for e in s.events %}
-    {% if e.gap %}<li class="gap">{{ e.gap }} seconds pass</li>{% endif %}
-    <li class="family-{{ e.family }}">
-      <label>
-        <input type="checkbox" name="evidence" value="{{ e.event.event_id }}" {{ 'checked' if e.event.event_id in s.evidence_marked }}>
-        <span class="muted">{{ e.event.ts }}</span>
-        <strong>{{ e.event.action.value }}</strong> {{ e.summary }}
-        {% for f in e.families %}<span class="chip">{{ f }}</span>{% endfor %}
-      </label>
-      {% if e.event.honeytoken_id %}<span class="chip">honeytoken {{ e.event.honeytoken_id }}</span>{% endif %}
-      <details><summary class="muted">Raw event and hashes</summary>
-        <pre>{{ e.raw }}</pre>
-        <p class="muted">prev {{ e.prev_hash }}<br>hash {{ e.hash }}</p>
-      </details>
-    </li>
-  {% endfor %}
-  </ol>
-</div>
-<div class="panel">
-  <h2>Review</h2>
-  <p>Current label: <strong>{{ s.label }}</strong>. Tick the events that prove it, then choose a label.</p>
-  {% if judge_mode %}<p class="banner">Judge mode is on, labels are read-only.</p>{% endif %}
-  <div class="row">
-    <button type="submit" name="label" value="malicious" {{ 'disabled' if judge_mode }}>Mark malicious</button>
-    <button type="submit" name="label" value="benign" class="secondary" {{ 'disabled' if judge_mode }}>Mark benign</button>
-    <span class="spacer"></span>
-    <a href="/session/{{ s.session_id }}/evidence.json">Evidence file (JSON)</a>
-    <a href="/session/{{ s.session_id }}/report">Printable report</a>
-  </div>
-</div>
-</form>
 {% endblock %}
