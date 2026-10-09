@@ -143,7 +143,7 @@ p { margin: 0 0 8px; }
 .grid-main { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) 360px; align-items: start; }
 .grid-main.even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .pqc .panel-body svg { max-width: 320px; }
-@media (max-width: 1100px) { .grid-main { grid-template-columns: 1fr; } }
+@media (max-width: 1100px) { .grid-main { grid-template-columns: minmax(0, 1fr); } }
 
 /* ---------- KPI tiles ---------- */
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); border: 1px solid var(--line);
@@ -226,7 +226,7 @@ tbody tr:last-child td { border-bottom: 0; }
 td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .cell-main { font-weight: 600; color: var(--text); }
 .cell-sub { display: block; font-size: 12px; color: var(--muted); }
-td .chips { flex-wrap: nowrap; }
+td .chips { flex-wrap: wrap; min-width: 0; }
 td .mono { white-space: nowrap; }
 .row-link { color: var(--text); font-weight: 600; }
 .trunc { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
@@ -285,7 +285,9 @@ dl { margin: 0; }
 .rule-title strong { font-size: 14px; }
 .rule-id { font-family: var(--mono); font-size: 12px; font-weight: 700; padding: 1px 7px; border-radius: 6px;
   background: var(--raise); color: var(--text); }
-.weight { margin-left: auto; font-weight: 700; color: var(--text); font-size: 13px; }
+.rule-tags { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; min-width: 0; }
+.weight { margin-left: auto; font-weight: 700; color: var(--text); font-size: 13px; white-space: nowrap; }
+@media (max-width: 640px) { .rule-tags { order: 1; flex-basis: 100%; } }
 .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
 @media (max-width: 640px) { .compare { grid-template-columns: 1fr; } }
 .compare > div { border-radius: var(--radius-sm); padding: 9px 12px; background: var(--panel-2); border: 1px solid var(--line); }
@@ -352,7 +354,9 @@ details.raw pre { margin-top: 8px; font: 11.5px/1.5 var(--mono); white-space: pr
 .pqc .panel-body svg { width: 100%; height: auto; display: block; }
 
 /* ---------- actor ---------- */
-.svc-bars .panel-body svg { width: 100%; height: auto; display: block; }
+/* Track and bar fills come from f-track / f-accent (theme variables); the labels keep their size
+   because the chart never scales past its 320-unit viewBox. */
+.svc-bars .panel-body svg { width: 100%; max-width: 320px; height: auto; display: block; }
 .linked { list-style: none; margin: 0; padding: 0; }
 .linked li { display: flex; align-items: center; gap: 10px; padding: 9px 18px; border-bottom: 1px solid var(--line); }
 .linked li:last-child { border-bottom: 0; }
@@ -381,7 +385,12 @@ details.raw pre { margin-top: 8px; font: 11.5px/1.5 var(--mono); white-space: pr
 .login-card button { width: 100%; }
 .login-card .theme-toggle { width: auto; margin: 0 0 6px -10px; }
 
+.bignum { font: 700 44px/1 var(--mono); padding-right: 22px; border-right: 1px solid var(--line); min-width: 110px; }
+.bignum small { display: block; font: 600 11px var(--sans); color: var(--muted); letter-spacing: .06em; margin-top: 6px; }
+.bignum.v-Noteworthy { color: var(--bad); } .bignum.v-Suspicious { color: var(--warn); } .bignum.v-Benign { color: var(--good); }
+
 /* ---------- small screens ---------- */
+/* Comes after .bignum so its divider and padding reset actually win. */
 @media (max-width: 860px) {
   .shell { grid-template-columns: 1fr; background: var(--bg); }
   .sidebar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 10px 16px; }
@@ -415,9 +424,6 @@ details.raw pre { margin-top: 8px; font: 11.5px/1.5 var(--mono); white-space: pr
   .panel { box-shadow: none; border-color: var(--line); }
 }
 
-.bignum { font: 700 44px/1 var(--mono); padding-right: 22px; border-right: 1px solid var(--line); min-width: 110px; }
-.bignum small { display: block; font: 600 11px var(--sans); color: var(--muted); letter-spacing: .06em; margin-top: 6px; }
-.bignum.v-Noteworthy { color: var(--bad); } .bignum.v-Suspicious { color: var(--warn); } .bignum.v-Benign { color: var(--good); }
 .clear-all { position: relative; }
 .clear-all > summary { list-style: none; cursor: pointer; }
 .clear-all > summary::-webkit-details-marker { display: none; }

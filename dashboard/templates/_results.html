@@ -17,7 +17,7 @@
       {% if r.honeytokens %}<span class="chip bad honeytoken-badge" title="{{ r.honeytokens|join(', ') }}"><svg class="icon"><use href="#i-key"/></svg>honeytoken</span>{% endif %}
       <span class="cell-sub trunc" title="{{ r.agent }}">{{ r.agent or 'no user agent' }}</span>
     </td>
-    <td><a class="mono" href="/actor/{{ r.actor_id }}">{{ r.actor_id[:12] }}</a>
+    <td><a class="mono" href="/actor/{{ r.actor_id }}">{{ r.actor_id[:16] }}</a>
       {% if r.actor_sessions > 1 %}<span class="cell-sub">{{ r.actor_sessions }} sessions · {{ r.services|join(', ') }}</span>{% endif %}</td>
     <td><div class="chips">{% for rule in r.rules %}<span class="chip rule">{{ rule }}</span>{% else %}<span class="muted">none</span>{% endfor %}</div>
       {% if r.techniques %}<div class="chips technique-chips" aria-label="ATT&amp;CK techniques">{% for t in r.techniques %}<span class="chip mono">ATT&amp;CK {{ t }}</span>{% endfor %}</div>{% endif %}</td>

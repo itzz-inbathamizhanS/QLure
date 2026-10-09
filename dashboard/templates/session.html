@@ -18,7 +18,7 @@
 
 {% if s.honeytokens %}
 <div class="callout warn honeytoken-banner"><svg class="icon"><use href="#i-key"/></svg>
-  <div>Honeytoken <span class="mono">{{ s.honeytokens|join(', ') }}</span> was used by {{ s.src_ip }} in this session, by <a class="mono" href="/actor/{{ s.actor_id }}">actor {{ s.actor_id[:12] }}</a>.</div>
+  <div>Honeytoken <span class="mono">{{ s.honeytokens|join(', ') }}</span> was used by {{ s.src_ip }} in this session, by <a class="mono" href="/actor/{{ s.actor_id }}">{{ s.actor_id[:16] }}</a>.</div>
 </div>
 {% endif %}
 
@@ -84,9 +84,9 @@
           <div class="rule-body">
             <div class="rule-title">
               <span class="rule-id">{{ h.rule_id }}</span><strong>{{ h.name }}</strong>
-              <span class="fam fam-{{ h.family }}">{{ h.family }}</span>
+              <span class="rule-tags"><span class="fam fam-{{ h.family }}">{{ h.family }}</span>
               <span class="chip {{ 'bad' if h.confidence == 'high' }}">{{ h.confidence }} confidence</span>
-              {% for t in h.attack %}<span class="chip mono">ATT&amp;CK {{ t }}</span>{% endfor %}
+              {% for t in h.attack %}<span class="chip mono">ATT&amp;CK {{ t }}</span>{% endfor %}</span>
               <span class="weight">+{{ h.weight }}</span>
             </div>
             <div class="compare">

@@ -11,6 +11,7 @@ from typing import Any
 from qlure.events import Event
 
 GAP_SECONDS = 60
+SERVICE_BAR_WIDTH = 200  # the track of the actor's per-decoy bars, in SVG units
 FAMILY_ORDER = ["recon", "credential", "exploit", "misuse", "chain"]
 # The stages of the actor kill-chain strip: the rule families R10 counts, in order.
 KILL_CHAIN = (("recon", "Recon"), ("credential", "Credential"), ("misuse", "Misuse"))
@@ -328,21 +329,29 @@ def session_story(events: list[Event], hits: list[dict[str, Any]]) -> str:
     minutes = seconds // 60
     when = f"{minutes} min" if minutes else "under a minute"
     source = ordered[0].src_ip
-    recon = any(h["family"] == "recon" for h in hits)
+    by_id = {e.event_id: e for e in ordered}
 
     def req(e: Event, key: str) -> str:
         return str((e.request or {}).get(key) or "")
 
     clauses: list[str] = []
+    # The scanner paths are the ones the R2 hit names as evidence (its events), counted once each.
+    probed = {
+        req(by_id[event_id], "path")
+        for hit in hits
+        if hit["rule_id"] == "R2"
+        for event_id in hit["evidence"]
+        if event_id in by_id and req(by_id[event_id], "path")
+    }
     paths = {
         req(e, "path")
         for e in ordered
         if e.action.value in ("http_request", "api_call") and not e.honeytoken_id and req(e, "path")
     }
-    if paths:
-        verb = "probed" if recon else "requested"
-        scanner = "scanner " if recon else ""
-        clauses.append(f"{verb} {_plural(len(paths), scanner + 'path')}")
+    if probed:
+        clauses.append(f"probed {_plural(len(probed), 'scanner path')}")
+    elif paths:
+        clauses.append(f"requested {_plural(len(paths), 'path')}")
     clauses.extend(
         f"triggered {h['name']} ({h['rule_id']})" for h in hits if h["family"] == "exploit"
     )
@@ -575,14 +584,19 @@ def actor_detail(conn: sqlite3.Connection, actor_id: str) -> dict[str, Any] | No
     by_service: dict[str, int] = {}
     for s in sessions:
         by_service[s["service"]] = by_service.get(s["service"], 0) + 1
-    most = max(by_service.values()) if by_service else 1
+    total = len(sessions)
     return {
         **actor,
         "kill_chain": kill_chain(conn, actor_id),
         "explanation": explanation[0] if explanation else "",
         "session_rows": sessions,
         "by_service": [
-            {"service": k, "count": v, "w": round(v / most * 240)}
+            {
+                "service": k,
+                "count": v,
+                "share": v / total,
+                "w": round(v / total * SERVICE_BAR_WIDTH),
+            }
             for k, v in sorted(by_service.items(), key=lambda kv: -kv[1])
         ],
     }

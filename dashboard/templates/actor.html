@@ -53,11 +53,12 @@
   <section class="panel svc-bars" aria-labelledby="svc-h">
     <div class="panel-head"><svg class="icon"><use href="#i-server"/></svg><h2 id="svc-h">Sessions by decoy</h2></div>
     <div class="panel-body">
-      <svg viewBox="0 0 320 {{ a.by_service|length * 30 }}" role="img" aria-label="{% for b in a.by_service %}{{ b.service }} {{ b.count }}{% if not loop.last %}, {% endif %}{% endfor %}">
+      <svg viewBox="0 0 320 {{ a.by_service|length * 30 }}" role="img" aria-label="{% for b in a.by_service %}{{ b.service }} {{ b.count }} of {{ a.sessions }}{% if not loop.last %}, {% endif %}{% endfor %}">
         {% for b in a.by_service %}{% set y = loop.index0 * 30 %}
         <text x="0" y="{{ y + 16 }}" class="svg-label">{{ b.service }}</text>
+        <rect x="56" y="{{ y + 6 }}" width="200" height="14" rx="3" class="f-track"/>
         <rect x="56" y="{{ y + 6 }}" width="{{ [b.w, 2]|max }}" height="14" rx="3" class="f-accent"/>
-        <text x="{{ 62 + b.w }}" y="{{ y + 17 }}" class="svg-value">{{ '{:,}'.format(b.count) }}</text>
+        <text x="264" y="{{ y + 17 }}" class="svg-value">{{ '{:,}'.format(b.count) }}</text>
         {% endfor %}
       </svg>
     </div>

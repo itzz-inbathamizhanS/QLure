@@ -18,7 +18,7 @@
 <div class="stack">
 {% if token_banner %}
 <div class="callout warn honeytoken-banner"><svg class="icon"><use href="#i-key"/></svg>
-  <div>Honeytoken <span class="mono">{{ token_banner.honeytoken_id }}</span> was used by {{ token_banner.src_ip }}, by <a class="mono" href="/actor/{{ token_banner.actor_id }}">actor {{ token_banner.actor_id[:12] }}</a>. <a href="/session/{{ token_banner.session_id }}">Open that session</a>.</div>
+  <div>Honeytoken <span class="mono">{{ token_banner.honeytoken_id }}</span> was used by {{ token_banner.src_ip }}, by <a class="mono" href="/actor/{{ token_banner.actor_id }}">{{ token_banner.actor_id[:16] }}</a>. <a href="/session/{{ token_banner.session_id }}">Open that session</a>.</div>
 </div>
 {% endif %}
 <div class="kpis">
