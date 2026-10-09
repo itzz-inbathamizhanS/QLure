@@ -84,8 +84,7 @@ This shows exactly the data on Vercel, on your own machine.
 
 > **Note:** `vercel-deploy/bundle.tar.xz` is not in the repository (neither the `vercel-deploy`
 > folder nor the bundle is committed), so this option does not work from a fresh clone. Use
-> **Option C** instead. A one-command seed that replaces the bundle is planned in ROADMAP task
-> P2.4 (`tools/seed_demo.py`). It does not exist yet.
+> **Option D** (sample data from `tools/seed_demo.py`) or **Option C** instead.
 
 1. Extract the demo database from the bundle into a folder outside the repo:
 
@@ -268,6 +267,31 @@ python -m uvicorn dashboard.app:app --port 9100
 
 7. Open http://127.0.0.1:9100, sign in, and click **Re-run correlation** after new attacks. For
    more attacks, repeat step 4.
+
+### Option D: sample data from the seed script (fresh clone, no Docker)
+
+This is the quickest way to get a populated dashboard. `tools/seed_demo.py` drives the real
+decoys in-process, then runs the same forward, correlate and verify steps. It generates 10 sessions
+for 7 actors (4 Noteworthy, 4 Suspicious, 2 Benign). It writes `data/demo.db` and `data/demo-logs/`,
+and refuses to replace existing sample data unless you pass `--force`.
+
+```bash
+pip install -e '.[dev]'
+```
+
+```bash
+python tools/seed_demo.py --db data/demo.db
+```
+
+Then start the dashboard with the command the seed prints (port 9100, the same as Option C):
+
+```bash
+QLURE_DB=data/demo.db QLURE_LOGS=data/demo-logs QLURE_DASHBOARD_PASSWORD=choose-a-strong-password python -m uvicorn dashboard.app:app --port 9100
+```
+
+Open http://127.0.0.1:9100 and follow the walkthrough. For the full five-minute walkthrough and the
+live path with `tools/demo_scenario.py`, see [REVIEWER.md](REVIEWER.md). The seed's sessions and
+verdicts repeat from run to run; the session IDs and times do not.
 
 ### Manual threat walkthrough (no scripts)
 

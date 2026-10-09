@@ -91,7 +91,7 @@ Phases 0 to 6 plus a learned second opinion are in place:
 
 Show the dashboard on the hosted Vercel snapshot or live on your own machine, with the
 same walkthrough for both. See [docs/DEMO.md](docs/DEMO.md) for the steps, the commands for
-localhost, and troubleshooting.
+localhost, and troubleshooting. Reviewers: [docs/REVIEWER.md](docs/REVIEWER.md) is a 5-minute walkthrough from a fresh clone with no Docker.
 
 ## Detection rules
 
