@@ -1,0 +1,164 @@
+# Correlation rules R1 to R10, from design doc section 10. Thresholds are starting points
+# to be tuned on real captured sessions in captures/tuning/ only.
+rules:
+  R1:
+    name: Service sweep
+    family: recon
+    weight: 20
+    confidence: medium
+    attack: [T1046]
+    threshold: {services: 3, window_s: 60}
+    threshold_text: "3 or more services within 60 seconds"
+  R2:
+    name: Path enumeration
+    family: recon
+    weight: 25
+    confidence: medium
+    attack: [T1595.003]
+    threshold: {distinct_404_paths: 15}
+    threshold_text: "15 or more distinct 404 paths, or any known scanner path"
+  R3:
+    name: Brute force
+    family: credential
+    weight: 30
+    confidence: medium
+    attack: [T1110.001]
+    threshold: {failed_logins: 5, usernames: 3}
+    threshold_text: "5 or more failed logins, or 3 or more usernames tried"
+  R4:
+    name: Default credentials
+    family: credential
+    weight: 15
+    confidence: low
+    attack: [T1078.001]
+    threshold: {pairs: 1}
+    threshold_text: "any pair from the default-credential list"
+  R5:
+    name: Injection payload
+    family: exploit
+    weight: 40
+    confidence: high
+    attack: [T1190]
+    threshold: {matches: 1}
+    threshold_text: "any SQLi, XSS, traversal or command-injection pattern"
+  R6:
+    name: Scanner tool
+    family: recon
+    weight: 15
+    confidence: medium
+    attack: [T1595.002]
+    threshold: {matches: 1}
+    threshold_text: "a known scanner user agent, or a banner grab with no follow-up"
+  R7:
+    name: Honeytoken use
+    family: misuse
+    weight: 60
+    confidence: high
+    attack: [T1552.001]
+    threshold: {uses: 1}
+    threshold_text: "any planted key or password used"
+  R8:
+    name: Post-login discovery
+    family: misuse
+    weight: 35
+    confidence: high
+    attack: [T1082, T1105]
+    threshold: {discovery_commands: 3}
+    threshold_text: "3 or more discovery commands, or any download or persistence command"
+  R9:
+    name: Sensitive file access
+    family: misuse
+    weight: 25
+    confidence: medium
+    attack: [T1005]
+    threshold: {reads: 1}
+    threshold_text: "any read of /.env, /backup/*, id_rsa or /etc/shadow"
+  R10:
+    name: Kill-chain progression
+    family: chain
+    weight: 25
+    confidence: high
+    attack: []
+    threshold: {families: 3}
+    threshold_text: "3 or more families in order (recon, credential, misuse)"
+
+verdicts:
+  suspicious: 30
+  noteworthy: 60
+
+# Subtracted from the score unless a high-confidence rule fired (honeytoken use is
+# malicious by construction, so one request carrying a planted key is never suppressed).
+suppressors:
+  only_benign_paths:
+    subtract: 50
+    paths: ["/", "/robots.txt", "/favicon.ico", "/health"]
+  failed_then_success:
+    subtract: 30
+  allowlisted_clients:
+    subtract: 100
+    user_agents: []
+    ips: []
+  too_few_requests:
+    subtract: 20
+    min_requests: 3
+
+lists:
+  default_credentials:
+    - [admin, admin]
+    - [admin, password]
+    - [admin, admin123]
+    - [admin, 123456]
+    - [root, root]
+    - [root, toor]
+    - [root, password]
+    - [root, 123456]
+    - [user, user]
+    - [test, test]
+    - [guest, guest]
+    - [ubuntu, ubuntu]
+  scanner_agents:
+    [sqlmap, nikto, nmap, gobuster, dirbuster, dirb, hydra, wfuzz, ffuf, masscan, zgrab, nuclei, acunetix, nessus, openvas]
+  scanner_paths:
+    - /wp-admin
+    - /wp-login.php
+    - /xmlrpc.php
+    - /phpmyadmin
+    - /pma
+    - /.git
+    - /cgi-bin
+    - /server-status
+    - /actuator
+    - /manager/html
+    - /solr
+    - /admin.php
+    - /shell.php
+    - /.aws
+    - /.ssh
+    - /vendor/phpunit
+  sensitive_paths:
+    - /.env
+    - /backup
+    - id_rsa
+    - /etc/shadow
+  discovery_commands:
+    [whoami, id, uname, ls, pwd, cat, ps, env, hostname, ifconfig, ip, history, uptime, w, df, free]
+  download_persistence:
+    [wget, curl, nc, ncat, crontab, chmod, useradd, ssh-keygen, authorized_keys, tftp, scp]
+  injection_patterns:
+    sqli:
+      - "(?i)\\bunion\\b.{0,20}\\bselect\\b"
+      - "(?i)'\\s*or\\s*'?1'?\\s*=\\s*'?1"
+      - "(?i)\\bsleep\\s*\\(\\s*\\d"
+      - "(?i);\\s*drop\\s+table"
+      - "(?i)\\bor\\s+1\\s*=\\s*1\\b"
+    xss:
+      - "(?i)<\\s*script"
+      - "(?i)\\bonerror\\s*="
+      - "(?i)javascript:"
+    traversal:
+      - "\\.\\./"
+      - "(?i)%2e%2e"
+      - "/etc/passwd"
+    command_injection:
+      - "(?i)[;|&`]\\s*(cat|ls|id|whoami|wget|curl|nc|bash|sh)\\b"
+      - "\\$\\([^)]*\\)"

@@ -35,6 +35,7 @@ include = ["qlure*", "decoys*"]
 
 [tool.setuptools.package-data]
 decoys = ["honeytokens.yaml", "fakefs/*.yaml"]
+"qlure.rules" = ["rules.yaml"]
 "decoys.web" = ["templates/*.html"]
 
 [tool.pytest.ini_options]

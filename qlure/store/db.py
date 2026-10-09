@@ -30,16 +30,17 @@ CREATE TABLE IF NOT EXISTS forwarder_state (
     offset INTEGER NOT NULL
 );
 
--- Filled in by later phases; created now so the layout is fixed.
+-- Written by `qlure correlate`; everything here can be rebuilt from `events`.
 CREATE TABLE IF NOT EXISTS sessions (
-    session_id TEXT PRIMARY KEY, service TEXT, src_ip TEXT, first_seen TEXT, last_seen TEXT
+    session_id TEXT PRIMARY KEY, actor_id TEXT, service TEXT, src_ip TEXT, client_fp TEXT,
+    first_seen TEXT, last_seen TEXT, event_ids TEXT
 );
 CREATE TABLE IF NOT EXISTS actors (
-    actor_id TEXT PRIMARY KEY, first_seen TEXT, last_seen TEXT
+    actor_id TEXT PRIMARY KEY, first_seen TEXT, last_seen TEXT, session_ids TEXT
 );
 CREATE TABLE IF NOT EXISTS findings (
-    finding_id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
-    verdict TEXT NOT NULL, score INTEGER NOT NULL, explanation TEXT NOT NULL
+    session_id TEXT PRIMARY KEY, actor_id TEXT, verdict TEXT NOT NULL, score INTEGER NOT NULL,
+    families TEXT, rule_ids TEXT, hits TEXT, suppressors TEXT, explanation TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS honeytokens (
     honeytoken_id TEXT PRIMARY KEY, kind TEXT, planted_in TEXT
@@ -56,5 +57,18 @@ def connect(path: Path | str) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    _migrate(conn)
     conn.executescript(SCHEMA)
     return conn
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Phase 2 created empty placeholder tables; replace them with the Phase 3 layout."""
+    for table, marker in (
+        ("sessions", "event_ids"),
+        ("actors", "session_ids"),
+        ("findings", "hits"),
+    ):
+        columns = [row["name"] for row in conn.execute(f"PRAGMA table_info({table})")]
+        if columns and marker not in columns:
+            conn.execute(f"DROP TABLE {table}")
