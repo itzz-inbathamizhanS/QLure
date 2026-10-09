@@ -74,7 +74,9 @@ Open **six** Command Prompt windows, each in `D:\QLure` with `.venv\Scripts\acti
 Ports 3306 and 6379 must be free. If you run a real MySQL or Redis, stop it first or skip window 4.
 Windows may show a firewall prompt: choose **Cancel / do not allow**, everything is localhost.
 
-In window 6, send the 13 labelled attack steps, then score and check them:
+In window 6, send the 15 labelled attack steps, then score and check them. Each attacker persona
+sends from its own documentation address, so the sessions split across several visitors; the
+summary's expected verdict per persona comes from the rule weights, and `qlure correlate` decides:
 
 ```
 python tools\demo_scenario.py

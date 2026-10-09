@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import ipaddress
 import socket
 import subprocess
 import sys
@@ -109,9 +110,68 @@ def test_every_step_names_rules_that_exist_in_rules_yaml():
     rules = yaml.safe_load(RULES.read_text(encoding="utf-8"))["rules"]
     assert set(rules) == {f"R{n}" for n in range(1, 12)}
     for item in demo.STEPS:
-        assert item.rules, f"{item.id} names no expected rule"
+        if item.persona != "benign":  # the benign visit is the one step that expects no rule
+            assert item.rules, f"{item.id} names no expected rule"
         for rule_id in item.rules:
             assert rule_id in rules, f"{item.id} names unknown rule {rule_id}"
+
+
+def test_every_step_has_a_persona_and_an_address_in_the_documentation_ranges():
+    assert {item.persona for item in demo.STEPS} == set(demo.PERSONA_IPS)
+    for item in demo.STEPS:
+        ip = ipaddress.ip_address(demo.PERSONA_IPS[item.persona])
+        assert any(ip in net for net in demo.SOURCE_NETS), f"{item.id}: {ip} is not documentation"
+        assert demo.visitor_ip(demo.Context(), item) == str(ip)
+
+
+def test_personas_use_the_same_addresses_as_the_seed():
+    spec = importlib.util.spec_from_file_location(
+        "seed_demo_check", REPO / "tools" / "seed_demo.py"
+    )
+    assert spec and spec.loader
+    seed = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(seed)
+    assert demo.PERSONA_IPS == {
+        "scanner": seed.SCANNER_IP,
+        "credential-stuffer": seed.STUFFER_IP,
+        "full-chain": seed.CHAIN_IP,
+        "data-store": seed.DATASTORE_IP,
+        "benign": seed.BENIGN_IPS[0],
+    }
+
+
+def test_unknown_persona_is_rejected_at_registration():
+    with pytest.raises(ValueError, match="nobody"):
+        demo.step("bad-step", "title", "nobody", ("R2",))(lambda ctx, out: None)
+
+
+def test_only_flag_uses_the_persona_address(capsys):
+    assert demo.main(["--only", "redis-auth", "--dry-run"]) == 0
+    assert "data-store" in capsys.readouterr().out
+    item = next(s for s in demo.STEPS if s.id == "redis-auth")
+    assert demo.visitor_ip(demo.Context(), item) == demo.PERSONA_IPS["data-store"]
+
+
+def test_summary_lists_each_persona_with_its_address_and_a_mixed_verdict(capsys):
+    results = [
+        (item, demo.Outcome(sent=["x"], replies=["y"], source_ip=demo.PERSONA_IPS[item.persona]))
+        for item in demo.STEPS
+    ]
+    demo.render_summary(results)
+    out = capsys.readouterr().out
+    for persona, ip in demo.PERSONA_IPS.items():
+        assert f"{persona} " in out and ip in out, persona
+    assert "suppressors can lower a score" in out
+    verdicts = {
+        persona: demo.expected_verdict(
+            demo.persona_rules([item for item in demo.STEPS if item.persona == persona])
+        )
+        for persona in demo.PERSONA_IPS
+    }
+    assert verdicts["benign"] == "Benign"
+    assert verdicts["credential-stuffer"] == "Suspicious"
+    assert verdicts["full-chain"] == "Noteworthy"
+    assert len(set(verdicts.values())) >= 3
 
 
 def test_planted_secrets_come_from_the_yaml_not_the_script():
@@ -128,9 +188,17 @@ def test_proxy_line_uses_the_documentation_range():
     assert line.endswith(b" 2222\r\n")
 
 
-def test_source_outside_documentation_range_is_refused(no_traffic, capsys):
-    assert demo.main(["--source-ip", "10.1.2.3", "--dry-run"]) == 2
-    assert "--source-ip" in capsys.readouterr().err
+@pytest.mark.parametrize("source", ["10.1.2.3", "198.51.101.1", "192.0.2.1", "::1", "not-an-ip"])
+def test_source_outside_documentation_range_is_refused(no_traffic, capsys, source):
+    assert demo.main(["--source-ip", source, "--dry-run"]) == 2
+    err = capsys.readouterr().err
+    assert "--source-ip" in err and "198.51.100.0/24" in err and "203.0.113.0/24" in err
+
+
+@pytest.mark.parametrize("source", ["198.51.100.9", "203.0.113.5"])
+def test_source_ip_override_in_either_documentation_range_is_accepted(no_traffic, capsys, source):
+    assert demo.main(["--source-ip", source, "--dry-run"]) == 0
+    assert f"every step from {source}" in capsys.readouterr().out
 
 
 def _free_port() -> int:
@@ -179,7 +247,9 @@ HTTP_STEPS = (
     "web-login",
     "web-phpmyadmin",
     "web-scanner-ua",
+    "api-key-brute",
     "api-key-reuse",
+    "benign-visit",
 )
 
 
@@ -201,7 +271,27 @@ def test_http_steps_run_against_the_live_decoys(web_and_api, read_events):
     assert any(event.request and event.request.get("path") == "/login" for event in web)
     assert api, "the API decoy logged nothing"
     assert any(event.honeytoken_id == "ht-api-001" for event in api)
-    assert {event.src_ip for event in web + api} == {demo.DEFAULT_SOURCE}
+    # Each persona reads as its own visitor, so the HTTP steps show four distinct addresses.
+    expected = {demo.PERSONA_IPS[name] for name in ("scanner", "credential-stuffer")}
+    expected |= {demo.PERSONA_IPS[name] for name in ("full-chain", "benign")}
+    assert {event.src_ip for event in web + api} == expected
+
+
+def test_source_ip_override_forces_one_address_on_every_step(web_and_api, read_events):
+    ctx = demo.Context(
+        host="127.0.0.1",
+        ports={**demo.PORTS, **web_and_api},
+        proxy=False,
+        override_ip="203.0.113.9",
+    )
+    by_id = {item.id: item for item in demo.STEPS}
+    for step_id in ("web-scan", "web-login", "api-key-reuse", "benign-visit"):
+        out = demo.run_step(ctx, by_id[step_id])
+        assert out.error is None, f"{step_id}: {out.error}"
+        assert out.source_ip == "203.0.113.9"
+    web = read_events("web")
+    api = read_events("api")
+    assert {event.src_ip for event in web + api} == {"203.0.113.9"}
 
 
 def test_planted_api_key_reply_is_accepted_by_the_api_decoy(web_and_api):

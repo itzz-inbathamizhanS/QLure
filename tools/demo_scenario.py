@@ -10,6 +10,7 @@ are refused, and no step contacts any other host.
     python tools/demo_scenario.py --dry-run
     python tools/demo_scenario.py                       # every step against 127.0.0.1
     python tools/demo_scenario.py --only api-key-reuse
+    python tools/demo_scenario.py --source-ip 203.0.113.5   # every step from one address
     python tools/demo_scenario.py --no-proxy-header     # when the gateway adds PROXY itself
 
 Exit codes: 0 all selected steps ran, 1 at least one step could not reach its decoy,
@@ -26,7 +27,7 @@ import ipaddress
 import socket
 import sys
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -43,8 +44,18 @@ DEFAULT_TARGET = "127.0.0.1"
 PORTS = {"web": 8080, "api": 8081, "ssh": 2222, "ftp": 2121, "mysql": 3306, "redis": 6379}
 # Raw TCP decoys read a PROXY v1 line before any protocol bytes. HTTP ports never take one.
 PROXY_SERVICES = frozenset({"ssh", "ftp", "mysql", "redis"})
-SOURCE_NET = ipaddress.ip_network("198.51.100.0/24")  # RFC 5737 documentation range
-DEFAULT_SOURCE = "198.51.100.23"
+SOURCE_NETS = (
+    ipaddress.ip_network("198.51.100.0/24"),  # RFC 5737 documentation range
+    ipaddress.ip_network("203.0.113.0/24"),  # RFC 5737 documentation range
+)
+# Each attacker persona sends from its own address, the same ones tools/seed_demo.py uses.
+PERSONA_IPS = {
+    "scanner": "198.51.100.23",
+    "credential-stuffer": "203.0.113.44",
+    "full-chain": "198.51.100.77",
+    "data-store": "203.0.113.91",
+    "benign": "198.51.100.150",
+}
 SOURCE_PORT = 40404
 BROWSER_UA = "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
 TIMEOUT = 3.0
@@ -135,12 +146,17 @@ FTP_ATTEMPTS = (("admin", "admin"), ("root", "toor"), ("ftp", "ftp"))
 
 @dataclass
 class Context:
-    """Where the steps send traffic. Tests override ports; the CLI keeps the defaults."""
+    """Where the steps send traffic. Tests override ports; the CLI keeps the defaults.
+
+    `override_ip` (--source-ip) sends every step from one address. Without it each step sends
+    from its persona's address. `source_ip` is the address a step really uses; run_step sets it.
+    """
 
     host: str = DEFAULT_TARGET
     ports: dict[str, int] = field(default_factory=lambda: dict(PORTS))
     proxy: bool = True
-    source_ip: str = DEFAULT_SOURCE
+    override_ip: str | None = None
+    source_ip: str = PERSONA_IPS["scanner"]
 
     def base_url(self, service: str) -> str:
         return f"http://{_hostport(self.host, self.ports[service])}"
@@ -153,6 +169,7 @@ class Outcome:
     sent: list[str] = field(default_factory=list)
     replies: list[str] = field(default_factory=list)
     error: str | None = None
+    source_ip: str = ""
 
     def record(self, sent: str, reply: str) -> None:
         self.sent.append(sent)
@@ -166,6 +183,7 @@ Runner = Callable[[Context, Outcome], None]
 class Step:
     id: str
     title: str
+    persona: str
     rules: tuple[str, ...]
     run: Runner
     note: str = ""
@@ -175,15 +193,22 @@ STEPS: list[Step] = []
 
 
 def step(
-    step_id: str, title: str, rules: tuple[str, ...], note: str = ""
+    step_id: str, title: str, persona: str, rules: tuple[str, ...], note: str = ""
 ) -> Callable[[Runner], Runner]:
-    """Register a step. Registration order is the order the demo runs them."""
+    """Register a step for one persona. Registration order is the order the demo runs them."""
+    if persona not in PERSONA_IPS:
+        raise ValueError(f"step {step_id!r} names unknown persona {persona!r}")
 
     def register(fn: Runner) -> Runner:
-        STEPS.append(Step(step_id, title, rules, fn, note))
+        STEPS.append(Step(step_id, title, persona, rules, fn, note))
         return fn
 
     return register
+
+
+def visitor_ip(ctx: Context, item: Step) -> str:
+    """The address a step sends from: the --source-ip override, else its persona's address."""
+    return ctx.override_ip or PERSONA_IPS[item.persona]
 
 
 def _hostport(host: str, port: int) -> str:
@@ -210,7 +235,7 @@ def _open(ctx: Context, service: str) -> socket.socket:
 
 def _http(ctx: Context, service: str) -> httpx.Client:
     # The web and API decoys sit behind nginx, which sets X-Forwarded-For; direct requests
-    # carry the same header so every step reads as one visitor.
+    # carry the same header, so each step reads as its persona's visitor address.
     return httpx.Client(
         base_url=ctx.base_url(service),
         timeout=TIMEOUT,
@@ -303,21 +328,26 @@ def _mysql_error(payload: bytes) -> str:
 # Web and API steps
 
 
-@step("web-scan", "Recon: probe common attack paths on the web decoy", ("R2",))
+@step("web-scan", "Recon: probe common attack paths on the web decoy", "scanner", ("R2",))
 def web_scan(ctx: Context, out: Outcome) -> None:
     with _http(ctx, "web") as web:
         for path in WEB_SCAN_PATHS:
             _send(out, web, "GET", path)
 
 
-@step("web-hunt", "Hunt for leaked files: /.env and the /backup folder", ("R9",))
+@step("web-hunt", "Hunt for leaked files: /.env and the /backup folder", "scanner", ("R9",))
 def web_hunt(ctx: Context, out: Outcome) -> None:
     with _http(ctx, "web") as web:
         for path in ("/.env", "/backup/", "/backup/config.bak"):
             _send(out, web, "GET", path)
 
 
-@step("web-lfi", "Path traversal and LFI wrappers on /download and /", ("R5", "R9"))
+@step(
+    "web-lfi",
+    "Path traversal and LFI wrappers on /download and /",
+    "full-chain",
+    ("R5", "R9"),
+)
 def web_lfi(ctx: Context, out: Outcome) -> None:
     with _http(ctx, "web") as web:
         for path in TRAVERSAL_PATHS:
@@ -327,6 +357,7 @@ def web_lfi(ctx: Context, out: Outcome) -> None:
 @step(
     "web-injection",
     "SQL injection, XSS and command injection strings on the web page",
+    "full-chain",
     ("R5",),
 )
 def web_injection(ctx: Context, out: Outcome) -> None:
@@ -338,6 +369,7 @@ def web_injection(ctx: Context, out: Outcome) -> None:
 @step(
     "web-exploit-strings",
     "Log4Shell, Shellshock, SSRF and web shell strings",
+    "full-chain",
     ("R5",),
     note="Fixed strings only; nothing is fetched or executed by the decoy.",
 )
@@ -361,6 +393,7 @@ def web_exploit_strings(ctx: Context, out: Outcome) -> None:
 @step(
     "web-login",
     "Login brute force and default credentials on /login",
+    "credential-stuffer",
     ("R3", "R4"),
 )
 def web_login(ctx: Context, out: Outcome) -> None:
@@ -385,7 +418,7 @@ def web_login(ctx: Context, out: Outcome) -> None:
             )
 
 
-@step("web-phpmyadmin", "phpMyAdmin probe on the common admin paths", ("R2",))
+@step("web-phpmyadmin", "phpMyAdmin probe on the common admin paths", "scanner", ("R2",))
 def web_phpmyadmin(ctx: Context, out: Outcome) -> None:
     with _http(ctx, "web") as web:
         _send(out, web, "GET", "/phpmyadmin/")
@@ -399,7 +432,7 @@ def web_phpmyadmin(ctx: Context, out: Outcome) -> None:
         )
 
 
-@step("web-scanner-ua", "Scanner user agents on the same page", ("R6",))
+@step("web-scanner-ua", "Scanner user agents on the same page", "scanner", ("R6",))
 def web_scanner_ua(ctx: Context, out: Outcome) -> None:
     with _http(ctx, "web") as web:
         for agent in SCANNER_AGENTS:
@@ -414,13 +447,13 @@ def web_scanner_ua(ctx: Context, out: Outcome) -> None:
 
 
 @step(
-    "api-key-reuse",
-    "API key brute force, then reuse of the planted API key",
-    ("R3", "R7"),
-    note="Five wrong keys reach R3's failed-login threshold; the planted key is R7.",
+    "api-key-brute",
+    "API key brute force with wrong keys",
+    "credential-stuffer",
+    ("R3",),
+    note="Five wrong keys reach R3's failed-login threshold.",
 )
-def api_key_reuse(ctx: Context, out: Outcome) -> None:
-    key = str(planted("ht-api-001")["value"])
+def api_key_brute(ctx: Context, out: Outcome) -> None:
     with _http(ctx, "api") as api:
         for guess in WRONG_API_KEYS:
             _send(
@@ -431,6 +464,18 @@ def api_key_reuse(ctx: Context, out: Outcome) -> None:
                 shown=f"GET /api/v1/users  X-API-Key: {guess}",
                 headers={"X-API-Key": guess},
             )
+
+
+@step(
+    "api-key-reuse",
+    "Reuse of the planted API key",
+    "full-chain",
+    ("R7",),
+    note="The planted key is R7.",
+)
+def api_key_reuse(ctx: Context, out: Outcome) -> None:
+    key = str(planted("ht-api-001")["value"])
+    with _http(ctx, "api") as api:
         _send(
             out,
             api,
@@ -471,6 +516,7 @@ async def _ssh_session(ctx: Context, out: Outcome) -> None:
 @step(
     "ssh-login",
     "SSH login with the planted deploy password, then discovery and persistence",
+    "full-chain",
     ("R7", "R8", "R9"),
     note="Commands are typed text; the decoy shell executes nothing. R9: the bash_history read.",
 )
@@ -481,6 +527,7 @@ def ssh_login(ctx: Context, out: Outcome) -> None:
 @step(
     "ftp-login",
     "FTP USER and PASS attempts on the FTP banner decoy",
+    "credential-stuffer",
     ("R3", "R4"),
     note="Three usernames reach R3. admin/admin and root/toor are default pairs (R4). "
     "Scoring of FTP logins is roadmap P1.4.",
@@ -497,6 +544,7 @@ def ftp_login(ctx: Context, out: Outcome) -> None:
 @step(
     "mysql-probe",
     "MySQL handshake with the default root password from the rules list",
+    "data-store",
     ("R4",),
     note="The decoy recognises the default pair by its scramble response, as a real login would.",
 )
@@ -513,6 +561,7 @@ def mysql_probe(ctx: Context, out: Outcome) -> None:
 @step(
     "redis-auth",
     "Redis AUTH with the planted password, then CONFIG SET and MODULE LOAD",
+    "data-store",
     ("R7", "R11"),
     note="CONFIG SET and MODULE LOAD are logged and answered with fixed replies; nothing loads.",
 )
@@ -529,13 +578,32 @@ def redis_auth(ctx: Context, out: Outcome) -> None:
             out.record(shown, _line(reader))
 
 
+# Benign visitor
+
+
+@step(
+    "benign-visit",
+    "Benign visitor: /, /login and /robots.txt with a browser user agent",
+    "benign",
+    (),
+    note="Harmless page reads. No rule is expected, so the verdict should be Benign.",
+)
+def benign_visit(ctx: Context, out: Outcome) -> None:
+    with _http(ctx, "web") as web:
+        for path in ("/", "/login", "/robots.txt"):
+            _send(out, web, "GET", path)
+
+
 # Running and reporting
 
 
 def run_step(ctx: Context, item: Step) -> Outcome:
-    out = Outcome()
+    """Run one step from its persona's address (or the --source-ip override)."""
+    source = visitor_ip(ctx, item)
+    out = Outcome(source_ip=source)
+    visitor = replace(ctx, source_ip=source)
     try:
-        item.run(ctx, out)
+        item.run(visitor, out)
     except (OSError, httpx.HTTPError, asyncssh.Error, ValueError) as exc:
         out.error = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
     return out
@@ -568,28 +636,47 @@ def _rule_text(rule_ids: Sequence[str]) -> str:
     return ", ".join(f"{rid} {table[rid]['name']}" for rid in rule_ids)
 
 
+def persona_rules(items: Sequence[Step]) -> tuple[str, ...]:
+    """Each distinct rule the given steps name once, in rule-number order."""
+    distinct = {rid for item in items for rid in item.rules}
+    return tuple(sorted(distinct, key=lambda rid: int(rid[1:])))
+
+
 def render_step(item: Step, out: Outcome) -> None:
     print(f"\n[{item.id}] {item.title}")
+    print(f"  from:   {item.persona} {out.source_ip}")
     for sent, reply in zip(out.sent, out.replies, strict=True):
         print(f"  > {_clip(sent)}")
         print(f"    < {_clip(reply)}")
     if out.error:
         print(f"  ! {_clip(out.error)}")
-    print(f"  expect: {_rule_text(item.rules)}  (verdict about {expected_verdict(item.rules)})")
+    verdict = expected_verdict(item.rules)
+    expect = _rule_text(item.rules) or "no rule"
+    print(f"  expect: {expect}  (verdict about {verdict})")
     if item.note:
         print(f"  note:   {_clip(item.note)}")
 
 
 def render_summary(results: Sequence[tuple[Step, Outcome]]) -> None:
+    """One block per persona: its address, the verdict its rules add up to, then its steps."""
     print("\nSummary")
-    print(f"  {'step':<20} {'status':<8} {'reqs':>4}  {'expect':<12} verdict")
+    print(f"  {'persona':<20} {'ip':<16} {'expect':<12} rules")
+    personas: dict[str, list[tuple[Step, Outcome]]] = {}
     for item, out in results:
-        status = "error" if out.error else "ok"
-        rules = ",".join(item.rules)
-        print(
-            f"  {item.id:<20} {status:<8} {len(out.sent):>4}  {rules:<12} "
-            f"{expected_verdict(item.rules)}"
-        )
+        personas.setdefault(item.persona, []).append((item, out))
+    for persona, pairs in personas.items():
+        items = [item for item, _ in pairs]
+        rules = persona_rules(items)
+        verdict = expected_verdict(rules)
+        rule_text = ",".join(rules) or "-"
+        print(f"  {persona:<20} {pairs[0][1].source_ip:<16} {verdict:<12} {rule_text}")
+        for item, out in pairs:
+            status = "error" if out.error else "ok"
+            print(f"    {item.id:<20} {status:<6} {len(out.sent):>4} reqs  {','.join(item.rules)}")
+    print(
+        "  Verdicts come from the rule weights alone: `qlure correlate` has the final say, "
+        "and suppressors can lower a score."
+    )
 
 
 def render_followups() -> None:
@@ -602,7 +689,8 @@ def render_followups() -> None:
 
 def render_list(items: Sequence[Step]) -> None:
     for item in items:
-        print(f"  {item.id:<20} {','.join(item.rules):<10} {item.title}")
+        rules = ",".join(item.rules) or "-"
+        print(f"  {item.id:<20} {item.persona:<18} {rules:<10} {item.title}")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -626,8 +714,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--source-ip",
-        default=DEFAULT_SOURCE,
-        help="documentation-range address every step appears to come from (198.51.100.0/24)",
+        metavar="IP",
+        help="send every step from this one documentation-range address (198.51.100.0/24 or "
+        "203.0.113.0/24). Default: each persona uses its own address.",
     )
     return parser
 
@@ -644,13 +733,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    try:
-        source = ipaddress.ip_address(args.source_ip)
-    except ValueError:
-        source = None
-    if source is None or source not in SOURCE_NET:
-        print(f"refused: --source-ip must be in {SOURCE_NET}", file=sys.stderr)
-        return 2
+    if args.source_ip is not None:
+        try:
+            source = ipaddress.ip_address(args.source_ip)
+        except ValueError:
+            source = None
+        if source is None or not any(source in net for net in SOURCE_NETS):
+            nets = " or ".join(str(net) for net in SOURCE_NETS)
+            print(f"refused: --source-ip must be in {nets}", file=sys.stderr)
+            return 2
     selected = [item for item in STEPS if args.only in (None, item.id)]
     if not selected:
         known = ", ".join(item.id for item in STEPS)
@@ -658,13 +749,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     ctx = Context(
-        host=args.target.strip().lower(), proxy=args.proxy_header, source_ip=args.source_ip
+        host=args.target.strip().lower(), proxy=args.proxy_header, override_ip=args.source_ip
     )
     proxy_text = "on for raw TCP ports" if ctx.proxy else "off"
-    print(
-        f"QLure demo scenario: target {ctx.host}, PROXY header {proxy_text}, "
-        f"visitor {ctx.source_ip}"
+    visitors = (
+        f"every step from {ctx.override_ip}" if ctx.override_ip else "one address per persona"
     )
+    print(f"QLure demo scenario: target {ctx.host}, PROXY header {proxy_text}, {visitors}")
     if args.dry_run:
         print("dry run: nothing was sent. Steps that would run:")
         render_list(selected)

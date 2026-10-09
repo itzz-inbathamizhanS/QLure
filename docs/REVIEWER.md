@@ -12,7 +12,7 @@ their evidence.
 - Downloads: `/export` with CSV, STIX 2.1 and blocklist files; `?min=suspicious` adds Suspicious sessions.
 - Ops: public `/healthz`, `/metrics` (login unless `QLURE_METRICS_PUBLIC=1`); `qlure export`, `qlure alert`, `qlure prune`.
 - Decoys: fake Docker Engine API on port 2375 (service `docker`); R5 labels its container patterns. Seven services, still R1 to R11.
-- Sample data: `tools/seed_demo.py` (10 sessions, 7 actors) and `tools/demo_scenario.py` (13 labelled steps).
+- Sample data: `tools/seed_demo.py` (10 sessions, 7 actors) and `tools/demo_scenario.py` (15 labelled steps, four attacker personas and one benign visitor).
 - Open: the hosted snapshot is not rebuilt yet (P4.5). The live feed does not forward, so run the forwarder.
 
 **Safety promise.** Every planted secret is fake and listed in `decoys/honeytokens.yaml`. The
@@ -50,7 +50,11 @@ QLURE_BIND_HOST=127.0.0.1 python -m decoys.banners.listeners   # ports 2121, 330
 python -m uvicorn decoys.dockerapi.app:app --host 127.0.0.1 --port 2375   # optional fake Docker API
 ```
 
-In a fifth terminal, send the 13 labelled steps, then score them:
+In a fifth terminal, send the 15 labelled steps, then score them. Each persona (scanner,
+credential stuffer, full chain, data store) sends from its own documentation address, and the
+benign visitor sends from another, so the run shows several visitors rather than one. The
+summary prints an expected verdict per persona from the rule weights alone; `qlure correlate`
+has the final say.
 
 ```bash
 python tools/demo_scenario.py        # --list shows the steps; --dry-run sends nothing
