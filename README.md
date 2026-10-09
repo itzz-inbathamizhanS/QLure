@@ -9,7 +9,7 @@ shows the investigator why a session was flagged.
 
 ## Status
 
-Phases 0 and 1 are in place:
+Phases 0, 1 and 2 are in place:
 
 - Event schema in `qlure/events/` (Pydantic), exported to `docs/event.schema.json`, and `emit(event)`,
   the one helper every decoy uses to validate and append events to `logs/<service>.jsonl`.
@@ -19,10 +19,13 @@ Phases 0 and 1 are in place:
 - Honeytokens (`decoys/honeytokens.yaml`) planted in one decoy and accepted in another:
   `/backup/config.bak` on the web portal gives the SSH password, the SSH shell's
   `~/.bash_history` gives the API key, and the API logs its use.
+- A forwarder tails the JSONL files into SQLite (`data/qlure.db`, WAL mode) and chains every event
+  by SHA-256. `qlure verify` checks the chain against the JSONL archive and fails at the first
+  edited, deleted or removed event.
 - Decoys cannot reach the internet, run read-only as a non-root user, and publish ports on
   127.0.0.1 only.
 
-Next phases: logging store and hash chain (2), correlation engine (3), session view and
+Next phases: correlation engine (3), session view and
 dashboard (4), evaluation on real captures (5), post-quantum extra (6).
 
 ## Run it
@@ -36,6 +39,7 @@ curl http://localhost:8080/backup/config.bak        # the planted SSH login
 ssh -p 2222 deploy@localhost                        # use the password from that file
 curl -H "X-API-Key: <key from ~/.bash_history>" http://localhost:8081/api/v1/users
 cat logs/*.jsonl
+qlure verify                                        # forwarder keeps data/qlure.db up to date
 ```
 
 Ports 3306 and 6379 must be free on your machine (stop a local MySQL or Redis first).
@@ -79,7 +83,7 @@ qlure/store/         forwarder, SQLite store, hash chain                (Prasann
 qlure/correlate/     sessions, actors, scoring, explanations            (Bharadhwaj M)
 qlure/rules/         rules R1 to R10 in YAML                            (Bharadhwaj M)
 qlure/pqc/           ML-DSA signing, SSH KEX fingerprint (extra)
-qlure/cli.py         qlure schema | validate (capture, replay, eval, verify to come)
+qlure/cli.py         qlure schema | validate | forward | verify (capture, replay, eval to come)
 dashboard/           session view and config dashboard, FastAPI + HTMX  (Prasanna Kumar Reddy)
 captures/            real captured sessions: tuning/ and heldout/
 tests/               pytest, one folder per module
