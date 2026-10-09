@@ -177,3 +177,36 @@ def test_ipv6_indicators_match_in_any_spelling():
     iocs = IOCSet.from_indicators({"indicators": [{"type": "ipv6-addr", "value": "2001:DB8:0::1"}]})
     hits = match_event({"src_ip": "2001:db8::1"}, iocs)
     assert [(h.indicator_type, h.value) for h in hits] == [("ipv6-addr", "2001:db8::1")]
+
+
+def test_verify_flags_a_deleted_or_truncated_archive_file(log_dir, tmp_path):
+    emit({"service": "web", "src_ip": "192.0.2.1", "session_id": "s", "action": "http_request"})
+    conn = db.connect(tmp_path / "qlure.db")
+    forwarder.forward_once(conn, log_dir)
+    path = log_dir / "web.jsonl"
+    saved = path.read_text()
+    path.write_text("")
+    assert verify(conn, log_dir)[1] is not None
+    path.unlink()
+    assert verify(conn, log_dir)[1] is not None
+    path.write_text(saved)
+    assert verify(conn, log_dir)[1] is None
+
+
+def test_clear_all_is_refused_when_the_store_is_busy(log_dir, tmp_path, monkeypatch):
+    client, conn = _dashboard(log_dir, tmp_path, monkeypatch)
+    real = db.connect
+
+    def impatient(path):
+        c = real(path)
+        c.execute("PRAGMA busy_timeout=0")
+        return c
+
+    monkeypatch.setattr("dashboard.app.db.connect", impatient)
+    other = real(tmp_path / "qlure.db")
+    other.execute("BEGIN IMMEDIATE")
+    assert client.post("/clear", data={"confirm": "yes"}).status_code == 409
+    other.rollback()
+    assert conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 1
+    assert (log_dir / "web.jsonl").read_text() != ""
+    assert verify(conn, log_dir)[1] is None

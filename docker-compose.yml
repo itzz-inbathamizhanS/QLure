@@ -105,7 +105,7 @@ services:
     cpus: 0.5
     pids_limit: 64
 
-  # Watchdog: joins the web decoy's network namespace, reads /proc/net only, and alerts on any
+  # Watchdogs (one per decoy; egress-watch-api/ssh/banners below mirror this): join the web decoy's network namespace, reads /proc/net only, and alerts on any
   # connection the decoy opens itself. Writes to data/, which the forwarder never reads.
   egress-watch:
     <<: *decoy
@@ -113,6 +113,42 @@ services:
       qlure watch-egress --proc-net /proc/net --out /var/lib/qlure/egress.jsonl --interval 2
     network_mode: "service:web"
     depends_on: [web]
+    volumes:
+      - ./data:/var/lib/qlure
+    mem_limit: 64m
+    cpus: 0.1
+    pids_limit: 32
+
+  egress-watch-api:
+    <<: *decoy
+    command: >
+      qlure watch-egress --proc-net /proc/net --out /var/lib/qlure/egress-api.jsonl --interval 2
+    network_mode: "service:api"
+    depends_on: [api]
+    volumes:
+      - ./data:/var/lib/qlure
+    mem_limit: 64m
+    cpus: 0.1
+    pids_limit: 32
+
+  egress-watch-ssh:
+    <<: *decoy
+    command: >
+      qlure watch-egress --proc-net /proc/net --out /var/lib/qlure/egress-ssh.jsonl --interval 2
+    network_mode: "service:ssh"
+    depends_on: [ssh]
+    volumes:
+      - ./data:/var/lib/qlure
+    mem_limit: 64m
+    cpus: 0.1
+    pids_limit: 32
+
+  egress-watch-banners:
+    <<: *decoy
+    command: >
+      qlure watch-egress --proc-net /proc/net --out /var/lib/qlure/egress-banners.jsonl --interval 2
+    network_mode: "service:banners"
+    depends_on: [banners]
     volumes:
       - ./data:/var/lib/qlure
     mem_limit: 64m
@@ -147,6 +183,9 @@ services:
       QLURE_MODEL: /var/lib/qlure/model.json
       QLURE_CONTENT: /runtime/content.json
       QLURE_DASHBOARD_PASSWORD: ${QLURE_DASHBOARD_PASSWORD:-}
+      # Session signing key, read from your shell or .env (never commit a value). If unset, a random
+      # key is made at startup and every login is lost on restart. Generate: openssl rand -hex 32
+      QLURE_DASHBOARD_SECRET: ${QLURE_DASHBOARD_SECRET:-}
     ports:
       - "127.0.0.1:9000:9000"
     networks: [admin]

@@ -124,3 +124,56 @@ def test_cli_forward_then_verify(log_dir, tmp_path, capsys):
     path.write_text(path.read_text().replace("whoami", "ls"))
     assert cli(["verify", "--logs", str(log_dir), "--db", db_path]) == 1
     assert "VERIFY FAILED" in capsys.readouterr().err
+
+
+def test_forward_once_takes_the_write_lock_before_reading_the_chain_head(log_dir, tmp_path):
+    import sqlite3
+
+    _fill(log_dir)
+    a = db.connect(tmp_path / "store" / "qlure.db")
+    b = db.connect(tmp_path / "store" / "qlure.db")
+    a.execute("PRAGMA busy_timeout=0")
+    b.execute("BEGIN IMMEDIATE")  # another writer is mid-append
+    with pytest.raises(sqlite3.OperationalError):
+        forwarder.forward_once(a, log_dir)
+    b.rollback()
+    assert forwarder.forward_once(a, log_dir) == (5, 0)
+    assert verify(a, log_dir)[1] is None
+
+
+def test_forwarder_restarts_a_file_that_shrank(log_dir, conn):
+    _fill(log_dir)
+    forwarder.forward_once(conn, log_dir)
+    (log_dir / "web.jsonl").write_text("")  # cleared behind the forwarder's back
+    assert forwarder.forward_once(conn, log_dir) == (0, 0)
+    assert (
+        conn.execute("SELECT offset FROM forwarder_state WHERE file='web.jsonl'").fetchone()[
+            "offset"
+        ]
+        == 0
+    )
+    _emit(Action.HTTP_REQUEST, request={"path": "/new"})
+    assert forwarder.forward_once(conn, log_dir) == (1, 0)
+
+
+def test_follow_survives_a_locked_database(conn, log_dir, monkeypatch, caplog):
+    import sqlite3
+
+    calls = []
+
+    def flaky(c, d):
+        calls.append(1)
+        if len(calls) == 1:
+            raise sqlite3.OperationalError("database is locked")
+        return (0, 0)
+
+    def stop(_):
+        if len(calls) >= 2:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(forwarder, "forward_once", flaky)
+    monkeypatch.setattr(forwarder.time, "sleep", stop)
+    with pytest.raises(KeyboardInterrupt):
+        forwarder.follow(conn, log_dir)
+    assert len(calls) == 2
+    assert "database is locked" in caplog.text

@@ -160,12 +160,16 @@ def _get(data: dict[str, Any], path: str) -> Any:
     return node
 
 
-def _set(data: dict[str, Any], path: str, value: Any) -> None:
+def _set(data: dict[str, Any], path: str, value: Any) -> bool:
+    """Set a dotted path. False (and no change) if it would go below a plain value."""
     parts = path.split(".")
     node = data
     for part in parts[:-1]:
         node = node.setdefault(part, {})
+        if not isinstance(node, dict):
+            return False
     node[parts[-1]] = value
+    return True
 
 
 def _forbidden(path: str) -> str | None:
@@ -221,9 +225,9 @@ def apply_change(
         reason = _forbidden(key)
         if reason is None and current.get("judge_mode") and key not in allowed_in_judge_mode:
             reason = "judge mode is on: settings are read-only"
-        if reason is None:
-            _set(candidate, key, value)
-        else:
+        if reason is None and not _set(candidate, key, value):
+            reason = "not a setting: the path goes below a plain value"
+        if reason is not None:
             audit(conn, who, key, _get(current, key), value, "refused", reason)
             return False, f"{key}: {reason}"
 
@@ -242,26 +246,59 @@ def apply_change(
             audit(conn, who, key, _get(current, key), value, "refused", rules_error)
         return False, rules_error
 
-    target.parent.mkdir(parents=True, exist_ok=True)
-    tmp = target.with_suffix(".tmp")
-    tmp.write_text(json.dumps(valid, indent=2), encoding="utf-8")
-    tmp.replace(target)
-    _publish_content(valid["content"])
-    for key in changes:
-        audit(conn, who, key, _get(current, key), _get(valid, key), "applied", "")
+    content_target = content_path() if path is None else target.with_name("content.json")
+    old_settings = _read_bytes(target)
+    old_content = _read_bytes(content_target)
+    try:
+        # Content first, then settings, then the audit rows. Any failure puts both files back.
+        _write_atomic(content_target, json.dumps(valid["content"], indent=2))
+        _write_atomic(target, json.dumps(valid, indent=2))
+        for key in changes:
+            audit(conn, who, key, _get(current, key), _get(valid, key), "applied", "")
+    except Exception as exc:
+        _restore(target, old_settings)
+        _restore(content_target, old_content)
+        conn.rollback()
+        return False, f"change not applied, could not record it: {exc}"
     from qlure.correlate.rules import load_config  # local: avoid a circular import
 
     load_config.cache_clear()
     return True, "saved"
 
 
-def _publish_content(content: dict[str, Any]) -> None:
-    """The decoys read only this small file, never the full settings or the database."""
-    path = content_path()
+def _read_bytes(path: Path) -> bytes | None:
+    try:
+        return path.read_bytes()
+    except OSError:
+        return None
+
+
+def _restore(path: Path, data: bytes | None) -> None:
+    try:
+        if data is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_bytes(data)
+    except OSError:
+        pass
+
+
+def _write_atomic(path: Path, text: str) -> None:
+    """The decoys read only the small content file, never the full settings or the database."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(content, indent=2), encoding="utf-8")
+    tmp.write_text(text, encoding="utf-8")
     tmp.replace(path)
+
+
+# Listed in rules.yaml for the explanation text, but no rule code reads them.
+UNREAD_THRESHOLDS = {
+    ("R4", "pairs"),
+    ("R5", "matches"),
+    ("R6", "matches"),
+    ("R7", "uses"),
+    ("R9", "reads"),
+}
 
 
 def _check_rule_tuning(valid: dict[str, Any]) -> str | None:
@@ -280,6 +317,8 @@ def _check_rule_tuning(valid: dict[str, Any]) -> str | None:
         for name, number in values.items():
             if name not in rules[rule_id]["threshold"]:
                 return f"rules.thresholds.{rule_id}.{name}: unknown threshold"
+            if (rule_id, name) in UNREAD_THRESHOLDS:
+                return f"rules.thresholds.{rule_id}.{name}: no rule reads this threshold"
             if not 1 <= number <= 1000:
                 return f"rules.thresholds.{rule_id}.{name}: must be between 1 and 1000"
     return None

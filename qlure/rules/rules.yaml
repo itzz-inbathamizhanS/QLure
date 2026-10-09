@@ -157,7 +157,7 @@ lists:
       - "(?i)javascript:"
     traversal:
       - "\\.\\./"
-      - "(?i)%2e%2e"
+      - "(?i)%(?:25)*2e%(?:25)*2e"
       - "/etc/passwd"
     command_injection:
       - "(?i)[;|&`]\\s*(cat|ls|id|whoami|wget|curl|nc|bash|sh)\\b"

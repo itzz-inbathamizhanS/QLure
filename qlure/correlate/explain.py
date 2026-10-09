@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from qlure.correlate.model import Finding, RuleHit
+from qlure.correlate.rules import load_config
 
 MAX_EVIDENCE_SHOWN = 4
 
@@ -36,7 +37,7 @@ def explain(finding: Finding) -> str:
     if finding.suppressors:
         names = ", ".join(f"{name} (-{amount})" for name, amount in finding.suppressors)
         lines.append(f"Suppressors applied: {names}.")
-    if finding.verdict == "Suspicious" and finding.score >= 60:
+    if finding.verdict == "Suspicious" and finding.score >= load_config()["verdicts"]["noteworthy"]:
         lines.append(
             "Held at Suspicious: the score needs two rule families or a high-confidence rule."
         )

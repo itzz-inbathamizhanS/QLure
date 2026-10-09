@@ -136,7 +136,9 @@ def _scan_text(event: Event) -> str:
         str(request.get("command", "")),
         *[str(v) for v in (request.get("headers") or {}).values()],
     ]
-    return unquote(unquote(" ".join(parts)))
+    raw = " ".join(parts)
+    # Raw text too: the decoded copy loses encoded dots ("%252e%252e" becomes "..").
+    return f"{raw} {unquote(unquote(raw))}"
 
 
 def r5_injection(session: Session) -> RuleHit | None:

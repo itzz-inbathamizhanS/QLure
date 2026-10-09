@@ -60,6 +60,8 @@ def verify(conn: sqlite3.Connection, log_dir: Path) -> tuple[int, Problem | None
         checked += 1
     removed = _removed_from_store(conn, log_dir)
     if removed is not None:
+        if removed.endswith("archive file is missing") or "shorter than" in removed:
+            return checked, Problem(0, removed, "JSONL archive file was deleted or truncated")
         return checked, Problem(0, removed, "event was removed from the store")
     return checked, None
 
@@ -75,7 +77,9 @@ def _removed_from_store(conn: sqlite3.Connection, log_dir: Path) -> str | None:
     for row in conn.execute("SELECT file, offset FROM forwarder_state ORDER BY file"):
         path = log_dir / row["file"]
         if not path.is_file():
-            continue
+            return f"{row['file']}: archive file is missing"
+        if path.stat().st_size < row["offset"]:
+            return f"{row['file']}: archive file is shorter than what was ingested"
         with path.open("rb") as fh:
             ingested = fh.read(row["offset"])
         for line in ingested.splitlines():

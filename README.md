@@ -119,13 +119,14 @@ dashboard process.
 With Docker:
 
 ```sh
-mkdir -p logs data/ssh runtime && chmod 777 logs data data/ssh runtime   # first time only
+mkdir -p logs data/ssh runtime && sudo chown 10001:10001 logs data data/ssh runtime \
+  && sudo chmod 750 logs data data/ssh runtime   # first time only; 10001 is the container user
 docker compose up -d --build
 curl -i http://localhost:8080/login
 curl http://localhost:8080/backup/config.bak        # the planted SSH login
 ssh -p 2222 deploy@localhost                        # use the password from that file
 curl -H "X-API-Key: <key from ~/.bash_history>" http://localhost:8081/api/v1/users
-cat logs/*.jsonl
+sudo cat logs/*.jsonl
 qlure verify                                        # forwarder keeps data/qlure.db up to date
 qlure correlate                                     # scored sessions, most suspicious first
 ```

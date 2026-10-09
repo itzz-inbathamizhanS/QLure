@@ -559,6 +559,9 @@ def _display_cwd(state: ShellState) -> str:
     return "~" if state.cwd == HOME else state.cwd
 
 
+MAX_LINE = 4096
+
+
 async def _read_line(process: Any) -> str | None:
     """Read one typed line, echoing it back. None means the client hung up."""
     typed: list[str] = []
@@ -578,6 +581,9 @@ async def _read_line(process: Any) -> str | None:
             continue
         if ch < " ":
             continue
+        if len(typed) >= MAX_LINE:
+            process.stdout.write("\r\n")
+            return None  # an endless line is not a person typing: drop the connection
         typed.append(ch)
         process.stdout.write(ch)
 
