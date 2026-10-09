@@ -31,6 +31,7 @@ dashboard = [
     "cryptography>=43",
     "requests>=2.32,<3",
     "python-whois>=0.9,<1",
+    "fpdf2>=2.8,<3",
 ]
 dev = [
     "qlure[decoys,dashboard,pqc]",

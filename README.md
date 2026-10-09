@@ -98,11 +98,12 @@ localhost, and troubleshooting.
 come from Q-CAPS and live in `qlure/pqcscan/`. Each finding names the evidence it rests on, and there is
 no single score.
 
-- **Standard scan:** public information only: DNS, WHOIS, HTTP headers, TLS handshake, key exchange,
-  certificate, and subdomains from certificate-transparency logs.
-- **Full scan:** adds port checks, a subdomain wordlist, and legacy TLS probes. It needs a DNS TXT
-  record that proves the admin controls the domain. Check the record on the page, publish it, then scan.
-  Full scans stay off until `QLURE_DASHBOARD_SECRET` is set, so the ownership token stays the same.
+- **Standard scan only:** public information: DNS, WHOIS, HTTP headers, TLS handshake, key exchange,
+  certificate, and subdomains from certificate-transparency logs. The active checks of a full scan
+  (port checks, subdomain wordlist, legacy TLS probes) are not reachable from the dashboard.
+- **PDF report:** after a scan, **Download PDF report** gives a two-page report with the post-quantum
+  summary, severity counts, TLS and certificate facts, checks, findings sorted by severity (each with
+  its evidence and fix) and subdomains. It is built from the result on screen, so the scan is not run again.
 
 Targets are hostnames or https URLs only: ports, credentials and IP addresses are refused. Results are
 shown on the page and are not saved. Scans run one at a time and are rate limited to five a minute per
@@ -213,7 +214,7 @@ docs/                event schema and design notes
 - The decoys and their gateway are the only parts that take traffic. The dashboard makes outbound
   connections in one place: the domain scanner (`/scanner`), which sends TLS handshakes, DNS and
   certificate-log lookups to a domain the admin names. It refuses private, loopback and reserved
-  addresses, and full scans need a DNS record that proves the admin controls the domain.
+  addresses.
 - Decoy containers are read-only, non-root, drop all capabilities and sit on an `internal: true`
   network with no internet access.
 - No real secrets anywhere. Every planted value is listed in `decoys/honeytokens.yaml` and is fake.
