@@ -7,7 +7,8 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY qlure ./qlure
 COPY decoys ./decoys
-RUN pip install --no-cache-dir '.[decoys]' \
+COPY dashboard ./dashboard
+RUN pip install --no-cache-dir '.[decoys,dashboard]' \
  && useradd --system --uid 10001 decoy \
  && mkdir -p /var/log/qlure && chown decoy /var/log/qlure
 

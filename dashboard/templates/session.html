@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Session {{ s.session_id }}{% endblock %}
+{% block content %}
+<div class="row">
+  <h1>Session <span class="muted">{{ s.session_id }}</span></h1>
+  <span class="spacer"></span>
+  <span class="badge verdict-{{ s.verdict }}">{{ s.verdict }} · {{ s.score }}</span>
+</div>
+<p class="muted">{{ s.service }} · {{ s.src_ip }} · actor {{ s.actor_id }} · {{ s.first_seen }} to {{ s.last_seen }}</p>
+
+<div class="panel">
+  <h2>Why this verdict</h2>
+  <pre class="explanation">{{ s.explanation }}</pre>
+  {% if s.suppressors %}
+  <p class="muted">Lowered by:
+    {% for name, amount in s.suppressors %}{{ name }} (-{{ amount }}){% if not loop.last %}, {% endif %}{% endfor %}
+  </p>
+  {% endif %}
+</div>
+
+{% if s.hits %}
+<div class="cards">
+  {% for h in s.hits %}
+  <div class="card family-{{ h.family }}">
+    <strong>{{ h.rule_id }} {{ h.name }}</strong>
+    <span class="chip">{{ h.family }}</span> <span class="chip">{{ h.confidence }} confidence</span>
+    <p>Needs: {{ h.threshold }}<br>Saw: {{ h.measured }}</p>
+    <p class="muted">Evidence: {{ h.evidence|length }} events</p>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if s.linked %}
+<div class="panel">
+  <h2>Same actor, other sessions</h2>
+  <ul>
+  {% for l in s.linked %}
+    <li><a href="/session/{{ l.session_id }}">{{ l.service }} session</a>
+      <span class="badge verdict-{{ l.verdict }}">{{ l.verdict }} · {{ l.score }}</span></li>
+  {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<form method="post" action="/session/{{ s.session_id }}/label">
+<div class="panel">
+  <h2>Timeline <span class="muted">({{ s.events|length }} events)</span></h2>
+  <ol class="timeline">
+  {% for e in s.events %}
+    {% if e.gap %}<li class="gap">{{ e.gap }} seconds pass</li>{% endif %}
+    <li class="family-{{ e.family }}">
+      <label>
+        <input type="checkbox" name="evidence" value="{{ e.event.event_id }}" {{ 'checked' if e.event.event_id in s.evidence_marked }}>
+        <span class="muted">{{ e.event.ts }}</span>
+        <strong>{{ e.event.action.value }}</strong> {{ e.summary }}
+        {% for f in e.families %}<span class="chip">{{ f }}</span>{% endfor %}
+      </label>
+      {% if e.event.honeytoken_id %}<span class="chip">honeytoken {{ e.event.honeytoken_id }}</span>{% endif %}
+      <details><summary class="muted">Raw event and hashes</summary>
+        <pre>{{ e.raw }}</pre>
+        <p class="muted">prev {{ e.prev_hash }}<br>hash {{ e.hash }}</p>
+      </details>
+    </li>
+  {% endfor %}
+  </ol>
+</div>
+<div class="panel">
+  <h2>Review</h2>
+  <p>Current label: <strong>{{ s.label }}</strong>. Tick the events that prove it, then choose a label.</p>
+  {% if judge_mode %}<p class="banner">Judge mode is on, labels are read-only.</p>{% endif %}
+  <div class="row">
+    <button type="submit" name="label" value="malicious" {{ 'disabled' if judge_mode }}>Mark malicious</button>
+    <button type="submit" name="label" value="benign" class="secondary" {{ 'disabled' if judge_mode }}>Mark benign</button>
+    <span class="spacer"></span>
+    <a href="/session/{{ s.session_id }}/evidence.json">Evidence file (JSON)</a>
+    <a href="/session/{{ s.session_id }}/report">Printable report</a>
+  </div>
+</div>
+</form>
+{% endblock %}

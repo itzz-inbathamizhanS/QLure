@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Q-Lure sessions{% endblock %}
+{% block content %}
+<div class="row">
+  <h1>Sessions</h1>
+  <span class="spacer"></span>
+  <form method="post" action="/refresh"><button type="submit">Re-run correlation</button></form>
+</div>
+<form class="filters panel" method="get" action="/"
+      hx-get="/" hx-target="#results" hx-trigger="change, keyup delay:300ms" hx-push-url="true">
+  <label>Verdict
+    <select name="verdict"><option value="">any</option>
+      {% for v in options.verdicts %}<option value="{{ v }}" {{ 'selected' if filters.get('verdict') == v }}>{{ v }}</option>{% endfor %}
+    </select></label>
+  <label>Service
+    <select name="service"><option value="">any</option>
+      {% for v in options.services %}<option value="{{ v }}" {{ 'selected' if filters.get('service') == v }}>{{ v }}</option>{% endfor %}
+    </select></label>
+  <label>Rule
+    <select name="rule"><option value="">any</option>
+      {% for v in options.rules %}<option value="{{ v }}" {{ 'selected' if filters.get('rule') == v }}>{{ v }}</option>{% endfor %}
+    </select></label>
+  <label>Actor
+    <select name="actor"><option value="">any</option>
+      {% for v in options.actors %}<option value="{{ v }}" {{ 'selected' if filters.get('actor') == v }}>{{ v }}</option>{% endfor %}
+    </select></label>
+  <label>Honeytoken
+    <select name="honeytoken"><option value="">any</option>
+      {% for v in options.honeytokens %}<option value="{{ v }}" {{ 'selected' if filters.get('honeytoken') == v }}>{{ v }}</option>{% endfor %}
+    </select></label>
+  <label>From <input type="text" name="since" placeholder="2026-01-01" value="{{ filters.get('since', '') }}"></label>
+  <label>To <input type="text" name="until" placeholder="2026-12-31" value="{{ filters.get('until', '') }}"></label>
+  <label>Sort
+    <select name="sort">
+      <option value="score" {{ 'selected' if filters.get('sort') != 'time' }}>Score</option>
+      <option value="time" {{ 'selected' if filters.get('sort') == 'time' }}>Newest</option>
+    </select></label>
+  <noscript><button type="submit">Filter</button></noscript>
+</form>
+<div id="results">
+{% include "_results.html" %}
+</div>
+{% endblock %}
