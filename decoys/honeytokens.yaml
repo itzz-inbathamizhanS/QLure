@@ -1,4 +1,27 @@
-# Every planted secret in the decoys, with a unique id. All values are FAKE.
-# Phase 1 fills this in (AWS-style key and DB password in /.env, SSH password in
-# /backup/config.bak, API key in the fake ~/.bash_history).
-honeytokens: []
+# Every planted secret in the decoys. All values are FAKE; each one contains "decoy".
+#
+# Chain used by the demo: web /backup/config.bak gives the SSH login, the SSH shell's
+# ~/.bash_history gives the API key, so one attacker's sessions link across services.
+honeytokens:
+  - id: ht-aws-001
+    kind: aws_access_key
+    value: AKIAQLUREDECOY000001
+    secret: qlure-decoy-aws-secret-0000000000000001
+    planted_in: web /.env
+    accepted_by: api          # sent as X-AWS-Access-Key
+  - id: ht-db-001
+    kind: db_password
+    value: Db!Decoy-7731
+    planted_in: web /.env
+    accepted_by: none         # planted only; no decoy checks it yet
+  - id: ht-ssh-001
+    kind: ssh_password
+    username: deploy
+    value: Deploy-Decoy-2026
+    planted_in: web /backup/config.bak
+    accepted_by: ssh
+  - id: ht-api-001
+    kind: api_key
+    value: qlk_decoy_7f3a9c21e5d84b0a
+    planted_in: ssh ~/.bash_history
+    accepted_by: api          # sent as X-API-Key
