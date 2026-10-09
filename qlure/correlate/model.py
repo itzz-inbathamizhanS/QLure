@@ -71,7 +71,27 @@ class Finding:
     hits: list[RuleHit]
     suppressors: list[tuple[str, int]] = field(default_factory=list)
     explanation: str = ""
+    # The same actor's whole picture: every rule it hit across all its sessions, combined and
+    # scored once. A thin session that is Benign alone can belong to a Noteworthy actor; the
+    # session's own score and verdict above are never changed by this.
+    actor_score: int = 0
+    actor_verdict: str = "Benign"
+    actor_hits: list[RuleHit] = field(default_factory=list)
+    actor_explanation: str = ""
 
     @property
     def families(self) -> list[str]:
         return sorted({h.family for h in self.hits})
+
+    @property
+    def effective_verdict(self) -> str:
+        """The more serious of this session's own verdict and its actor's combined verdict.
+
+        Only promoted when this session has at least one rule hit of its own: a session with
+        none is a bystander swept into the actor by a weak link (e.g. a guessed password it
+        happened to reuse), not evidence that this session's own traffic was part of an attack.
+        """
+        if not self.hits:
+            return self.verdict
+        order = {"Benign": 0, "Suspicious": 1, "Noteworthy": 2}
+        return max((self.verdict, self.actor_verdict), key=lambda v: order[v])

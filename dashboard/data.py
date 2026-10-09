@@ -17,6 +17,20 @@ def _loads(text: str | None, default: Any) -> Any:
     return json.loads(text) if text else default
 
 
+_ORDER = {"Benign": 0, "Suspicious": 1, "Noteworthy": 2, None: 0}
+
+
+def _effective(verdict: str, actor_verdict: str | None, hit_count: int) -> str:
+    """The more serious of a session's own verdict and its actor's combined verdict.
+
+    Only promoted when the session has at least one rule hit of its own (see
+    `qlure.correlate.model.Finding.effective_verdict`, which this mirrors for stored rows).
+    """
+    if not hit_count:
+        return verdict
+    return max((verdict, actor_verdict or "Benign"), key=lambda v: _ORDER[v])
+
+
 def disagrees(verdict: str, ml_score: float | None) -> bool:
     """Rules and the learned model point opposite ways: worth a human look."""
     if ml_score is None:
@@ -61,7 +75,9 @@ def list_findings(conn: sqlite3.Connection, filters: dict[str, str]) -> list[dic
     for row in rows:
         rule_ids = _loads(row["rule_ids"], [])
         event_ids = _loads(row["event_ids"], [])
-        if filters.get("verdict") and row["verdict"] != filters["verdict"]:
+        hits = _loads(row["hits"], [])
+        effective = _effective(row["verdict"], row["actor_verdict"], len(hits))
+        if filters.get("verdict") and effective != filters["verdict"]:
             continue
         if filters.get("service") and row["service"] != filters["service"]:
             continue
@@ -92,6 +108,9 @@ def list_findings(conn: sqlite3.Connection, filters: dict[str, str]) -> list[dic
                 "label": row["label"] or "unreviewed",
                 "ml_score": row["ml_score"],
                 "disagrees": disagrees(row["verdict"], row["ml_score"]),
+                "actor_score": row["actor_score"],
+                "actor_verdict": row["actor_verdict"],
+                "effective_verdict": effective,
             }
         )
     key = filters.get("sort", "score")
@@ -180,6 +199,10 @@ def session_detail(conn: sqlite3.Connection, session_id: str) -> dict[str, Any] 
         "ml_score": row["ml_score"],
         "ml_why": row["ml_why"],
         "disagrees": disagrees(row["verdict"], row["ml_score"]),
+        "actor_score": row["actor_score"],
+        "actor_verdict": row["actor_verdict"],
+        "actor_explanation": row["actor_explanation"],
+        "effective_verdict": _effective(row["verdict"], row["actor_verdict"], len(hits)),
         "label": label["label"] if label else "unreviewed",
         "evidence_marked": _loads(label["evidence_event_ids"], []) if label else [],
     }

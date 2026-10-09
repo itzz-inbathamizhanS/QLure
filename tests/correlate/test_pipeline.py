@@ -1,6 +1,6 @@
 """Sessions, actors, the kill chain, explanations and storage, on events from the real decoys."""
 
-from helpers import FIREFOX, banner_visits, hits_of, run, ssh_with_honeytoken, web
+from helpers import FIREFOX, banner_visits, finding_for, hits_of, run, ssh_with_honeytoken, web
 
 from qlure.correlate import store as correlate_store
 from qlure.correlate.engine import correlate
@@ -97,6 +97,40 @@ def test_service_sweep_from_one_ip_is_one_actor(read_events):
     result = run(read_events)
     assert len(result.actors) == 1
     assert len(result.actors[0].sessions) == 3
+
+
+def test_actor_score_promotes_a_thin_session_but_never_a_clean_bystander(read_events):
+    """A single probe is thin alone but belongs to the same actor as a loud scanner;
+    a stranger who merely reused the same guessed password must not be swept up."""
+    scanner = web("198.51.100.231", agent="Nikto/2.5.0")
+    for i in range(6):
+        scanner.post("/login", data={"username": "ops", "password": f"guess-{i}"})
+    scanner.get("/backup/config.bak")
+
+    probe = web("198.51.100.232", agent=FIREFOX)
+    probe.post("/login", data={"username": "ops", "password": "guess-0"})
+    probe.get("/wp-login.php")
+
+    bystander = web("198.51.100.233", agent="Safari/17")
+    bystander.post("/login", data={"username": "ops", "password": "guess-0"})
+
+    result = run(read_events)
+    scanner_f = finding_for(result, "198.51.100.231", "web")
+    probe_f = finding_for(result, "198.51.100.232", "web")
+    bystander_f = finding_for(result, "198.51.100.233", "web")
+
+    assert scanner_f.actor_id == probe_f.actor_id == bystander_f.actor_id  # linked by the password
+
+    assert scanner_f.verdict == "Noteworthy"  # loud on its own
+
+    assert probe_f.hits  # R2: a known scanner path was requested
+    assert probe_f.verdict != "Noteworthy"  # thin alone
+    assert probe_f.effective_verdict == "Noteworthy"  # but the actor's evidence is clear
+    assert probe_f.score != probe_f.actor_score  # the session's own score is untouched
+
+    assert not bystander_f.hits  # one ordinary failed login fires no rule at all
+    assert bystander_f.verdict == "Benign"
+    assert bystander_f.effective_verdict == "Benign"  # never promoted by a bystander link alone
 
 
 def test_findings_are_stored_and_queryable(read_events, log_dir, tmp_path):

@@ -91,7 +91,7 @@ def test_htmx_request_gets_only_the_results_fragment(client):
 def test_session_page_explains_and_shows_timeline(client):
     top = _session_ids(client, sort="score")[0]
     html = client.get(f"/session/{top}").text
-    assert "Why this verdict" in html and "Timeline" in html and "Raw event" in html
+    assert "Why this session's own verdict" in html and "Timeline" in html and "Raw event" in html
 
 
 def test_attacker_text_is_escaped_and_headers_forbid_inline_script(client, env):

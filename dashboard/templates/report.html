@@ -4,7 +4,8 @@
 <h1>Incident report</h1>
 <p>Session {{ s.session_id }} · {{ s.service }} · {{ s.src_ip }} · actor {{ s.actor_id }}<br>
 {{ s.first_seen }} to {{ s.last_seen }}</p>
-<p><span class="badge verdict-{{ s.verdict }}">{{ s.verdict }}</span> score {{ s.score }} · review label: {{ s.label }}</p>
+<p><span class="badge verdict-{{ s.effective_verdict }}">{{ s.effective_verdict }}</span> score {{ s.actor_score if s.effective_verdict != s.verdict else s.score }} · review label: {{ s.label }}</p>
+{% if s.actor_verdict != s.verdict %}<p class="muted">This session alone: {{ s.verdict }} ({{ s.score }}). Combined across the actor's sessions: {{ s.actor_verdict }} ({{ s.actor_score }}).</p>{% endif %}
 <h2>Why</h2>
 <pre class="explanation">{{ s.explanation }}</pre>
 {% if s.ml_score is not none %}<h2>Model second opinion</h2>

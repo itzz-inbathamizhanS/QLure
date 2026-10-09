@@ -8,7 +8,8 @@
   <tbody>
   {% for r in rows %}
   <tr>
-    <td><span class="badge verdict-{{ r.verdict }}">{{ r.verdict }}</span></td>
+    <td><span class="badge verdict-{{ r.effective_verdict }}">{{ r.effective_verdict }}</span>
+      {% if r.effective_verdict != r.verdict %}<span class="muted">(this session alone: {{ r.verdict }})</span>{% endif %}</td>
     <td>{{ r.score }}</td>
     <td>{{ r.actor_id }}{% if r.actor_sessions > 1 %} <span class="muted">({{ r.actor_sessions }} sessions: {{ r.services|join(', ') }})</span>{% endif %}</td>
     <td>{{ r.service }}</td>

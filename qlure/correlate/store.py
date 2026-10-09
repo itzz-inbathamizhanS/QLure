@@ -45,22 +45,8 @@ def save(conn: sqlite3.Connection, result: Result) -> None:
         )
     model = ml_model.load()  # None until someone trains one; the rules work without it
     for f in result.findings:
-        hits = [
-            {
-                "rule_id": h.rule_id,
-                "name": h.name,
-                "family": h.family,
-                "weight": h.weight,
-                "confidence": h.confidence,
-                "attack": list(h.attack),
-                "measured": h.measured,
-                "threshold": h.threshold,
-                "evidence": list(h.evidence),
-            }
-            for h in f.hits
-        ]
         conn.execute(
-            "INSERT INTO findings VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO findings VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 f.session.session_id,
                 f.actor_id,
@@ -68,14 +54,31 @@ def save(conn: sqlite3.Connection, result: Result) -> None:
                 f.score,
                 json.dumps(f.families),
                 json.dumps(sorted({h.rule_id for h in f.hits}, key=lambda r: int(r[1:]))),
-                json.dumps(hits),
+                json.dumps([_hit_json(h) for h in f.hits]),
                 json.dumps(f.suppressors),
                 f.explanation,
                 round(model.probability(f.session), 4) if model else None,
                 model.explain(f.session) if model else None,
+                f.actor_score,
+                f.actor_verdict,
+                f.actor_explanation,
             ),
         )
     conn.commit()
+
+
+def _hit_json(h) -> dict:
+    return {
+        "rule_id": h.rule_id,
+        "name": h.name,
+        "family": h.family,
+        "weight": h.weight,
+        "confidence": h.confidence,
+        "attack": list(h.attack),
+        "measured": h.measured,
+        "threshold": h.threshold,
+        "evidence": list(h.evidence),
+    }
 
 
 def run(conn: sqlite3.Connection) -> Result:

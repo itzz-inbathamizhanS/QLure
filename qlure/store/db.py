@@ -41,7 +41,8 @@ CREATE TABLE IF NOT EXISTS actors (
 CREATE TABLE IF NOT EXISTS findings (
     session_id TEXT PRIMARY KEY, actor_id TEXT, verdict TEXT NOT NULL, score INTEGER NOT NULL,
     families TEXT, rule_ids TEXT, hits TEXT, suppressors TEXT, explanation TEXT NOT NULL,
-    ml_score REAL, ml_why TEXT
+    ml_score REAL, ml_why TEXT,
+    actor_score INTEGER, actor_verdict TEXT, actor_explanation TEXT
 );
 CREATE TABLE IF NOT EXISTS honeytokens (
     honeytoken_id TEXT PRIMARY KEY, kind TEXT, planted_in TEXT
@@ -90,3 +91,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if findings and "ml_score" not in findings:
         conn.execute("ALTER TABLE findings ADD COLUMN ml_score REAL")
         conn.execute("ALTER TABLE findings ADD COLUMN ml_why TEXT")
+    if findings and "actor_score" not in findings:
+        conn.execute("ALTER TABLE findings ADD COLUMN actor_score INTEGER")
+        conn.execute("ALTER TABLE findings ADD COLUMN actor_verdict TEXT")
+        conn.execute("ALTER TABLE findings ADD COLUMN actor_explanation TEXT")
