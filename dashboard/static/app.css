@@ -8,6 +8,7 @@
   color-scheme: light;
   --bg: #f2f2f2; --bg-2: #ebebeb; --panel: #ffffff; --panel-2: #f7f7f7; --raise: #ececec;
   --line: #dcdcdc; --line-2: #c4c4c4;
+  --field: #ffffff; --field-line: #c4c4c4;
   --text: #000000; --text-2: #2b2b2b; --muted: #5e5e5e;
   --accent: #000000; --accent-2: #1a1a1a; --accent-ink: #ffffff; --accent-soft: rgba(0, 0, 0, .06);
   --bad: #b91c1c; --bad-soft: #fef2f2; --bad-line: #fecaca;
@@ -28,6 +29,7 @@
     color-scheme: dark;
     --bg: #000000; --bg-2: #050505; --panel: #0b0b0b; --panel-2: #121212; --raise: #1c1c1c;
     --line: #262626; --line-2: #3d3d3d;
+    --field: #0b0b0b; --field-line: #3d3d3d;
     --text: #ffffff; --text-2: #d4d4d4; --muted: #8c8c8c;
     --accent: #ffffff; --accent-2: #e5e5e5; --accent-ink: #000000; --accent-soft: rgba(255, 255, 255, .09);
     --bad: #f87171; --bad-soft: rgba(248, 113, 113, .13); --bad-line: rgba(248, 113, 113, .38);
@@ -43,6 +45,7 @@
   color-scheme: dark;
   --bg: #000000; --bg-2: #050505; --panel: #0b0b0b; --panel-2: #121212; --raise: #1c1c1c;
   --line: #262626; --line-2: #3d3d3d;
+  --field: #0b0b0b; --field-line: #3d3d3d;
   --text: #ffffff; --text-2: #d4d4d4; --muted: #8c8c8c;
   --accent: #ffffff; --accent-2: #e5e5e5; --accent-ink: #000000; --accent-soft: rgba(255, 255, 255, .09);
   --bad: #f87171; --bad-soft: rgba(248, 113, 113, .13); --bad-line: rgba(248, 113, 113, .38);
@@ -109,12 +112,12 @@ p { margin: 0 0 8px; }
 /* Theme toggle: a ghost button; the icon shows the mode in use (sun = light, moon = dark). */
 .theme-toggle { justify-content: flex-start; width: 100%; color: var(--text-2); border-color: transparent; }
 .theme-toggle:hover { background: var(--panel); color: var(--text); filter: none; }
-.theme-toggle[aria-pressed="true"] { color: var(--text); }
+.theme-toggle[data-state="dark"] { color: var(--text); }
 .theme-icon { display: inline-block; width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor;
   stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vertical-align: -3px; }
 .theme-icon.ti-moon { display: none; }
-.theme-toggle[aria-pressed="true"] .ti-sun { display: none; }
-.theme-toggle[aria-pressed="true"] .ti-moon { display: inline-block; }
+.theme-toggle[data-state="dark"] .ti-sun { display: none; }
+.theme-toggle[data-state="dark"] .ti-moon { display: inline-block; }
 .status-card { padding: 0 10px; font-size: 12px; color: var(--muted); }
 .status-card strong { color: var(--text); font-weight: 600; }
 .pulse { display: none; width: 8px; height: 8px; border-radius: 50%; background: var(--good);
@@ -186,8 +189,13 @@ p { margin: 0 0 8px; }
 /* ---------- forms + buttons ---------- */
 label { display: grid; gap: 4px; font-size: 12px; font-weight: 550; color: var(--muted); }
 input, select, textarea {
-  font: inherit; font-size: 13.5px; color: var(--text); background: var(--bg-2); border: 1px solid var(--line-2);
+  font: inherit; font-size: 13.5px; color: var(--text); background: var(--field); border: 1px solid var(--field-line);
   border-radius: var(--radius-sm); padding: 7px 10px; min-height: 36px; width: 100%;
+}
+/* Browser autofill would paint its own fill; keep it on the themed field colour. */
+input:-webkit-autofill, input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px var(--field) inset; box-shadow: 0 0 0 1000px var(--field) inset;
+  -webkit-text-fill-color: var(--text);
 }
 textarea { font-family: var(--mono); font-size: 12.5px; resize: vertical; }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
@@ -313,7 +321,14 @@ details.raw pre { margin-top: 8px; font: 11.5px/1.5 var(--mono); white-space: pr
 .tl.family-chain::before { border-color: var(--chain); background: var(--chain); }
 .tl:target { background: var(--accent-soft); }
 .tl-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.tl-head input[type=checkbox] { width: 16px; height: 16px; min-height: 0; margin: 0; accent-color: var(--accent); }
+.tl-head input[type=checkbox] {
+  -webkit-appearance: none; appearance: none; flex: none; width: 16px; height: 16px; min-height: 0; margin: 0; padding: 0;
+  display: inline-grid; place-content: center; border: 1px solid var(--line-2); border-radius: 3px; background: var(--field);
+}
+.tl-head input[type=checkbox]:checked { background: var(--accent); border-color: var(--accent); }
+.tl-head input[type=checkbox]:checked::after { content: ""; width: 4px; height: 8px; margin-top: -2px;
+  border: solid var(--accent-ink); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.tl-head input[type=checkbox]:focus-visible { box-shadow: 0 0 0 3px var(--accent-soft); }
 .tl-time { font: 12px var(--mono); color: var(--muted); }
 .tl-action { font-weight: 650; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
 .tl-summary { font: 12.5px var(--mono); color: var(--text); word-break: break-all; }
@@ -364,7 +379,7 @@ details.raw pre { margin-top: 8px; font: 11.5px/1.5 var(--mono); white-space: pr
 .login-card .brand { padding: 0 0 18px; }
 .login-card form { display: grid; gap: 14px; }
 .login-card button { width: 100%; }
-.login-card .theme-toggle { width: auto; margin: 0 0 6px auto; }
+.login-card .theme-toggle { width: auto; margin: 0 0 6px -10px; }
 
 /* ---------- small screens ---------- */
 @media (max-width: 860px) {
@@ -375,6 +390,7 @@ details.raw pre { margin-top: 8px; font: 11.5px/1.5 var(--mono); white-space: pr
   .nav { display: flex; gap: 2px; }
   .sidebar-foot { margin: 0 0 0 auto; display: flex; }
   .theme-toggle { width: auto; }
+  .bignum { border-right: 0; padding-right: 0; }
   .topbar, .content { padding-left: 16px; padding-right: 16px; }
 }
 
@@ -384,6 +400,7 @@ details.raw pre { margin-top: 8px; font: 11.5px/1.5 var(--mono); white-space: pr
     color-scheme: light;
     --bg: #ffffff; --bg-2: #ffffff; --panel: #ffffff; --panel-2: #ffffff; --raise: #eeeeee;
     --line: #cccccc; --line-2: #999999;
+    --field: #ffffff; --field-line: #999999;
     --text: #000000; --text-2: #222222; --muted: #444444;
     --accent: #000000; --accent-2: #000000; --accent-ink: #ffffff; --accent-soft: #eeeeee;
     --bad: #b91c1c; --bad-soft: #ffffff; --bad-line: #b91c1c;

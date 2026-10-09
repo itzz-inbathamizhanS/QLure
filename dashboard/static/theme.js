@@ -34,11 +34,20 @@
     return system && system.matches ? "dark" : "light";
   }
 
+  // The label names the action a click will take, not the mode in use: light shows
+  // "Dark mode" (switch to dark), dark shows "Light mode" (switch to light).
   function paint() {
-    var pressed = current() === "dark" ? "true" : "false";
+    var dark = current() === "dark";
+    var label = dark ? "Light mode" : "Dark mode";
     var buttons = document.querySelectorAll("[data-theme-toggle]");
     for (var i = 0; i < buttons.length; i++) {
-      buttons[i].setAttribute("aria-pressed", pressed);
+      var button = buttons[i];
+      button.setAttribute("aria-label", label);
+      button.setAttribute("data-state", dark ? "dark" : "light");
+      var text = button.querySelector("[data-theme-label]");
+      if (text) {
+        text.textContent = label;
+      }
     }
   }
 

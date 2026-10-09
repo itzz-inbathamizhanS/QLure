@@ -29,7 +29,7 @@ def client(app):
 
 def _assert_toggle(html):
     assert "data-theme-toggle" in html
-    assert 'aria-pressed="false"' in html
+    assert "aria-pressed" not in html  # the label changes, so it is not a pressed-toggle
     assert "Dark mode" in html
 
 
@@ -98,3 +98,71 @@ def test_csp_unchanged(client):
     r = client.get("/config")
     assert r.headers["content-security-policy"] == CSP
     assert "unsafe-inline" not in r.headers["content-security-policy"]
+
+
+def _block(css, start):
+    """Return the text of the first { ... } block that begins at or after `start`."""
+    open_at = css.index("{", start)
+    depth = 0
+    for i in range(open_at, len(css)):
+        if css[i] == "{":
+            depth += 1
+        elif css[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return css[open_at + 1 : i]
+    raise AssertionError("unclosed block")
+
+
+def test_toggle_label_names_the_action(app, client):
+    html = client.get("/config").text
+    # The server renders the light default; theme.js rewrites it on load and on click.
+    assert 'aria-label="Dark mode"' in html
+    assert "data-theme-label" in html
+    js = TestClient(app).get("/static/theme.js").text
+    assert '"Light mode"' in js
+    assert '"Dark mode"' in js
+    assert 'dark ? "Light mode" : "Dark mode"' in js
+    assert 'setAttribute("aria-label", label)' in js
+    assert "[data-theme-label]" in js
+
+
+def test_toggle_does_not_use_aria_pressed(app):
+    c = TestClient(app)
+    js = c.get("/static/theme.js").text
+    css = c.get("/static/app.css").text
+    assert "aria-pressed" not in js
+    assert "aria-pressed" not in css
+    assert 'setAttribute("data-state"' in js
+    assert '.theme-toggle[data-state="dark"]' in css
+
+
+def test_timeline_checkbox_is_drawn_with_variables(app):
+    css = TestClient(app).get("/static/app.css").text
+    rule = css[css.index(".tl-head input[type=checkbox] {") :]
+    body = _block(rule, 0)
+    assert "appearance: none" in body
+    assert "var(--field)" in body
+    assert "var(--line-2)" in body
+    assert "#" not in body
+    assert ".tl-head input[type=checkbox]:checked {" in css
+
+
+def test_inputs_share_one_themed_field(app):
+    css = TestClient(app).get("/static/app.css").text
+    body = _block(css, css.index("input, select, textarea {"))
+    assert "background: var(--field)" in body
+    assert "border: 1px solid var(--field-line)" in body
+    for name in ("--field:", "--field-line:"):
+        assert css.count(name) >= 4, name
+
+
+def test_small_screen_drops_score_card_divider(app):
+    css = TestClient(app).get("/static/app.css").text
+    start = css.index("@media (max-width: 860px) {")
+    assert ".bignum { border-right: 0; padding-right: 0; }" in _block(css, start)
+
+
+def test_login_toggle_aligns_with_form_edge(app):
+    css = TestClient(app).get("/static/app.css").text
+    assert ".login-card .theme-toggle { width: auto; margin: 0 0 6px -10px; }" in css
