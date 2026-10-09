@@ -17,6 +17,7 @@ SQLite in WAL mode. Its tables (from `qlure/store/db.py`):
 | `honeytokens` | The planted secret list, as loaded | correlate |
 | `config_audit` | Every settings change, accepted or refused, and its undo | dashboard |
 | `checkpoints` | Signed snapshots of the hash chain (optional) | `qlure sign` |
+| `retention_anchors` | Append-only record of each `qlure prune`: last removed seq and hash | `qlure prune` |
 | `labels` | Operator review labels (malicious or benign) and evidence marks | dashboard |
 
 The `events` table keeps the full canonical JSON in `raw` plus the indexed columns used for
@@ -49,6 +50,12 @@ What this gives you:
 
 It reports the first place they disagree. A tampered row, a missing row, or a removed line in the
 archive all stop the check at that point.
+
+## Retention
+
+`qlure prune` removes a contiguous prefix of old events and pins the cut with a retention anchor;
+`verify` accepts a chain that starts at the anchor and reports how many events were pruned. See
+[RETENTION.md](../RETENTION.md).
 
 ## Signing checkpoints (optional)
 

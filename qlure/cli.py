@@ -22,8 +22,8 @@ from qlure.correlate.ioc import IOCSet, match_event
 from qlure.events import Event, json_schema
 from qlure.ml import model as ml_model
 from qlure.pqc import signing
-from qlure.store import db, forwarder
-from qlure.store.verify import verify, verify_config
+from qlure.store import db, forwarder, retention
+from qlure.store.verify import retention_summary, verify, verify_config
 from qlure.watch.egress import watch as watch_egress
 
 SCHEMA_PATH = Path("docs/event.schema.json")
@@ -82,7 +82,14 @@ def _verify(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
-    print(f"chain verified: {checked} events intact")
+    kept = retention_summary(conn)
+    if kept:
+        print(
+            f"chain verified: {checked} events intact, {kept[0]} pruned before {kept[1]}"
+            " (anchor ok)"
+        )
+    else:
+        print(f"chain verified: {checked} events intact")
     config_checked, legacy, config_problem = verify_config(conn)
     if config_problem is not None:
         print(
@@ -108,6 +115,30 @@ def _verify(args: argparse.Namespace) -> int:
         print(f"VERIFY FAILED: {result.problem}", file=sys.stderr)
         return 1
     print(f"{result.checked} {signing.ALGORITHM} checkpoints verified")
+    return 0
+
+
+def _prune(args: argparse.Namespace) -> int:
+    try:
+        age = retention.parse_age(args.older_than)
+        if not args.dry_run and not args.yes:
+            raise retention.PruneError(
+                "prune permanently deletes events from the store and the JSONL archive; "
+                "run with --dry-run to preview, then --yes to proceed"
+            )
+        result = retention.prune(db.connect(args.db), args.logs, age, dry_run=args.dry_run)
+    except retention.PruneError as exc:
+        print(f"prune: {exc}", file=sys.stderr)
+        return 1
+    verb = "would remove" if args.dry_run else "removed"
+    print(f"{verb} {result.pruned} events older than {result.cutoff}; keeping {result.kept}")
+    if result.pruned:
+        print(f"new anchor: event #{result.anchor_seq} hash {result.anchor_hash}")
+        print(f"oldest kept: {result.oldest_kept}  newest kept: {result.newest_kept}")
+        for name, count in result.files.items():
+            print(f"  {name}: {count} lines")
+    if args.dry_run:
+        print("dry run: nothing changed")
     return 0
 
 
@@ -342,6 +373,14 @@ def main(argv: list[str] | None = None) -> int:
     p_watch.add_argument("--interval", type=float, default=5.0)
     p_watch.add_argument("--iterations", type=int, default=None, help="stop after N polls")
     p_watch.set_defaults(func=_watch_egress)
+
+    p_prune = sub.add_parser("prune", help="delete events older than a cutoff (anchored, manual)")
+    p_prune.add_argument("--db", type=Path, default=DEFAULT_DB)
+    p_prune.add_argument("--logs", type=Path, default=DEFAULT_LOGS)
+    p_prune.add_argument("--older-than", required=True, help="age such as 30d or 4w (minimum 1d)")
+    p_prune.add_argument("--dry-run", action="store_true", help="show what would be removed")
+    p_prune.add_argument("--yes", action="store_true", help="confirm the permanent deletion")
+    p_prune.set_defaults(func=_prune)
 
     p_key = sub.add_parser("keygen", help="make an ML-DSA-65 key pair for signing checkpoints")
     p_key.add_argument("--out", type=Path, default=Path("data/signing"))

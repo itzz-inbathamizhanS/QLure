@@ -21,6 +21,15 @@ def link_hash(prev_hash: str, canonical_json: str) -> str:
     return hashlib.sha256(f"{prev_hash}\n{canonical_json}".encode()).hexdigest()
 
 
+ANCHOR_FIELDS = ("prev_anchor", "upto_seq", "upto_hash", "ts", "cutoff", "pruned", "total_pruned")
+
+
+def anchor_hash(row: dict) -> str:
+    """SHA-256 over one retention anchor row (which includes the previous anchor's hash)."""
+    body = json.dumps({k: row[k] for k in ANCHOR_FIELDS}, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(body.encode()).hexdigest()
+
+
 CONFIG_FIELDS = ("ts", "who", "key", "old_value", "new_value", "outcome", "reason")
 
 

@@ -47,7 +47,8 @@ credential-stuffing run.
 - **Port settings need a manual restart.** The dashboard saves them but cannot control Docker.
 - **Dashboard port.** The README says 9000 (inside Docker). A native run chooses its own port.
 - **Single shared dashboard password.** There are no user accounts or per-operator audit trail.
-- **Retention is a setting only.** Nothing deletes old data based on the retention value yet.
+- **Retention is manual.** `qlure prune` removes old data behind a hash-chain anchor; nothing runs it
+  automatically and the `retention_days` setting is informational. See [RETENTION.md](../RETENTION.md).
 
 ## Things backed by evidence
 

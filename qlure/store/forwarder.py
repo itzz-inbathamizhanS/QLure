@@ -17,7 +17,14 @@ log = logging.getLogger(__name__)
 
 def _last_hash(conn: sqlite3.Connection) -> str:
     row = conn.execute("SELECT hash FROM events ORDER BY seq DESC LIMIT 1").fetchone()
-    return row["hash"] if row else GENESIS
+    if row:
+        return row["hash"]
+    # No events left (e.g. Clear All after a prune): continue from the newest retention anchor
+    # so `qlure verify` still sees one unbroken chain.
+    anchor = conn.execute(
+        "SELECT upto_hash FROM retention_anchors ORDER BY anchor_id DESC LIMIT 1"
+    ).fetchone()
+    return anchor["upto_hash"] if anchor else GENESIS
 
 
 def forward_once(conn: sqlite3.Connection, log_dir: Path) -> tuple[int, int]:

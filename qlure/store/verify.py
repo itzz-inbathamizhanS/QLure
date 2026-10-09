@@ -9,7 +9,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from qlure.events import Event
-from qlure.store.chain import GENESIS, canonical, config_hash, link_hash
+from qlure.store.chain import GENESIS, anchor_hash, canonical, config_hash, link_hash
 
 
 @dataclass(frozen=True)
@@ -17,6 +17,35 @@ class Problem:
     seq: int
     event_id: str
     reason: str
+
+
+def check_anchors(conn: sqlite3.Connection) -> tuple[list[sqlite3.Row], Problem | None]:
+    """The retention anchors must form one hash-linked, non-decreasing history."""
+    rows = conn.execute("SELECT * FROM retention_anchors ORDER BY anchor_id").fetchall()
+    prev, last_seq, total = GENESIS, 0, 0
+    for row in rows:
+        where = f"retention anchor #{row['anchor_id']}"
+        problem = None
+        if row["prev_anchor"] != prev:
+            problem = "anchor history broken: an earlier anchor was removed"
+        elif anchor_hash(dict(row)) != row["hash"]:
+            problem = "anchor was edited after it was written"
+        elif row["upto_seq"] <= last_seq:
+            problem = "anchor does not move forward"
+        elif row["pruned"] < 1 or row["total_pruned"] != total + row["pruned"]:
+            problem = "anchor counts are inconsistent"
+        if problem:
+            return rows, Problem(row["upto_seq"], where, problem)
+        prev, last_seq, total = row["hash"], row["upto_seq"], row["total_pruned"]
+    return rows, None
+
+
+def retention_summary(conn: sqlite3.Connection) -> tuple[int, str] | None:
+    """(events pruned in total, newest cutoff) or None if nothing was ever pruned."""
+    row = conn.execute(
+        "SELECT total_pruned, cutoff FROM retention_anchors ORDER BY anchor_id DESC LIMIT 1"
+    ).fetchone()
+    return (row["total_pruned"], row["cutoff"]) if row else None
 
 
 def _archive(log_dir: Path) -> dict[str, str]:
@@ -41,10 +70,16 @@ def verify(conn: sqlite3.Connection, log_dir: Path) -> tuple[int, Problem | None
     and that the line has not been deleted.
     """
     archive = _archive(log_dir)
-    prev = GENESIS
+    anchors, anchor_problem = check_anchors(conn)
+    if anchor_problem is not None:
+        return 0, anchor_problem
+    prev = anchors[-1]["upto_hash"] if anchors else GENESIS
+    anchor_seq = anchors[-1]["upto_seq"] if anchors else 0
     checked = 0
     for row in conn.execute("SELECT seq, event_id, raw, prev_hash, hash FROM events ORDER BY seq"):
         seq, event_id = row["seq"], row["event_id"]
+        if seq <= anchor_seq:
+            return checked, Problem(seq, event_id, "event is older than the retention anchor")
         if row["prev_hash"] != prev:
             return checked, Problem(
                 seq, event_id, "chain link broken: an earlier event was removed"

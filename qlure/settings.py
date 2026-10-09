@@ -156,7 +156,8 @@ class Settings(BaseModel):
     content: Content = Field(default_factory=Content)
     rules: RuleTuning = Field(default_factory=RuleTuning)
     allowlist: Allowlist = Field(default_factory=Allowlist)
-    retention_days: int = Field(default=30, ge=1, le=365)
+    # 0 = no stated policy. Informational: `qlure prune` is run by hand or cron, never scheduled.
+    retention_days: int = Field(default=30, ge=0, le=365)
     alerts: Alerts = Field(default_factory=Alerts)
 
     @field_validator("decoys")

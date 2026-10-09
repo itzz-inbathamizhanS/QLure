@@ -57,6 +57,12 @@ CREATE TABLE IF NOT EXISTS checkpoints (
     upto_seq INTEGER PRIMARY KEY, head_hash TEXT NOT NULL, ts TEXT NOT NULL,
     algorithm TEXT NOT NULL, key_id TEXT NOT NULL, signature TEXT NOT NULL
 );
+-- Append-only history of `qlure prune`: each row pins the last removed event's seq and hash.
+CREATE TABLE IF NOT EXISTS retention_anchors (
+    anchor_id INTEGER PRIMARY KEY AUTOINCREMENT, prev_anchor TEXT NOT NULL,
+    upto_seq INTEGER NOT NULL, upto_hash TEXT NOT NULL, ts TEXT NOT NULL, cutoff TEXT NOT NULL,
+    pruned INTEGER NOT NULL, total_pruned INTEGER NOT NULL, hash TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS labels (
     session_id TEXT PRIMARY KEY, label TEXT NOT NULL, evidence_event_ids TEXT NOT NULL,
     who TEXT NOT NULL, ts TEXT NOT NULL

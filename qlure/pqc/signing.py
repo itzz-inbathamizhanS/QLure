@@ -108,16 +108,27 @@ def verify_checkpoints(conn: sqlite3.Connection, public_key: Path) -> Checkpoint
         return CheckpointResult(0)
     oqs = _oqs()
     pub = public_key.read_bytes()
+    # Events removed by `qlure prune` are gone, but their checkpoints stay valid: the signature is
+    # still checked, and a checkpoint exactly at an anchor must match the anchor's hash.
+    anchors = {
+        a["upto_seq"]: a["upto_hash"] for a in conn.execute("SELECT * FROM retention_anchors")
+    }
+    pruned_upto = max(anchors, default=0)
     with oqs.Signature(ALGORITHM) as verifier:
         for row in rows:
             where = f"checkpoint at event #{row['upto_seq']}"
             if row["key_id"] != key_id(pub):
                 return CheckpointResult(0, f"{where} was signed with a different key")
-            event = conn.execute(
-                "SELECT hash FROM events WHERE seq=?", (row["upto_seq"],)
-            ).fetchone()
-            if event is None or event["hash"] != row["head_hash"]:
-                return CheckpointResult(0, f"{where}: the chain no longer ends in the signed hash")
+            if row["upto_seq"] in anchors and anchors[row["upto_seq"]] != row["head_hash"]:
+                return CheckpointResult(0, f"{where}: the retention anchor does not match it")
+            if row["upto_seq"] > pruned_upto:
+                event = conn.execute(
+                    "SELECT hash FROM events WHERE seq=?", (row["upto_seq"],)
+                ).fetchone()
+                if event is None or event["hash"] != row["head_hash"]:
+                    return CheckpointResult(
+                        0, f"{where}: the chain no longer ends in the signed hash"
+                    )
             ok = verifier.verify(
                 message(row["upto_seq"], row["head_hash"]), bytes.fromhex(row["signature"]), pub
             )
