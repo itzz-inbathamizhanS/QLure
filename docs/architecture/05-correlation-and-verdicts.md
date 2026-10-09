@@ -32,7 +32,7 @@ link to anything else.
 
 ## Stage 3: rules and scores (`qlure/correlate/rules.py`, `engine.py`)
 
-Ten rules, each with a weight, a family and a confidence. The full list is in
+Eleven rules (R1 to R11), each with a weight, a family and a confidence. The full list is in
 [qlure/rules/rules.yaml](../../qlure/rules/rules.yaml).
 
 | Rule | Name | Weight | Family | Confidence | Fires when |
@@ -41,14 +41,23 @@ Ten rules, each with a weight, a family and a confidence. The full list is in
 | R2 | Path enumeration | 25 | recon | medium | 15 or more distinct 404 paths, or a known scanner path |
 | R3 | Brute force | 30 | credential | medium | 5 or more failed logins, or 3 or more usernames |
 | R4 | Default credentials | 15 | credential | low | any pair from the default-credential list |
-| R5 | Injection payload | 40 | exploit | high | any SQL injection, XSS, traversal or command pattern |
-| R6 | Scanner tool | 15 | recon | medium | a known scanner User-Agent, or a banner grab with no follow-up |
+| R5 | Injection payload | 40 | exploit | high | any SQL injection, XSS, traversal, command-injection, Log4Shell, Shellshock, Spring4Shell, SSRF or web-shell pattern (web and API requests) |
+| R6 | Scanner tool | 15 | recon | medium | a known scanner User-Agent (from the list in `rules.yaml`), or a banner grab with no follow-up |
 | R7 | Honeytoken use | 60 | misuse | high | any planted key or password is used |
-| R8 | Post-login discovery | 35 | misuse | high | 3 or more discovery commands, or a download or persistence command |
-| R9 | Sensitive file access | 25 | misuse | medium | any read of `/.env`, `/backup/*`, `id_rsa` or `/etc/shadow` |
+| R8 | Post-login discovery | 35 | misuse | high | 3 or more discovery commands, or a download or persistence command (SSH shell) |
+| R9 | Sensitive file access | 25 | misuse | medium | any read of `/.env`, `/backup/*`, `/.git`, `/.aws`, `/.ssh`, `id_rsa`, `/etc/passwd` or `/etc/shadow` |
 | R10 | Kill-chain progression | 25 | chain | high | 3 or more families in order: recon, then credential, then misuse |
+| R11 | Data-store abuse | 30 | exploit | high | 1 or more risky Redis commands: `CONFIG SET`, `SLAVEOF`/`REPLICAOF`, `MODULE LOAD`, `EVAL`/`EVALSHA`, `SCRIPT`, `DEBUG`, `FLUSHALL`/`FLUSHDB` (Redis sessions) |
 
-R1 and R10 are actor-level: they look across all of an actor's sessions.
+R1 and R10 are actor-level: they look across all of an actor's sessions. R11 is judged per
+Redis session. Its family is `exploit`, so it does not count toward the R10 kill chain.
+
+**ATT&CK labels.** Each rule hit carries MITRE ATT&CK IDs, shown on the session page. They are
+labels only and never change a score. The IDs depend on what was seen: R5 maps each attack kind
+it matched (for example command injection to T1059.004, web shell to T1505.003, the rest to
+T1190), R8 maps each command category (discovery, download, persistence, privilege escalation,
+lateral movement, exfiltration, crypto mining), and R11 maps each Redis command type. The mapping
+is in the `technique_map` section of `rules.yaml`.
 
 ### Scoring
 

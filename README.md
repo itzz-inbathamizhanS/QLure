@@ -13,17 +13,18 @@ Phases 0 to 6 plus a learned second opinion are in place:
 
 - Event schema in `qlure/events/` (Pydantic), exported to `docs/event.schema.json`, and `emit(event)`,
   the one helper every decoy uses to validate and append events to `logs/<service>.jsonl`.
-- Five decoys, all behind one nginx gateway on an `internal: true` network:
+- Six decoys, all behind one nginx gateway on an `internal: true` network:
   web portal (8080), REST API (8081), SSH-like server with a fake shell (2222),
-  and FTP / MySQL / Redis listeners (2121, 3306, 6379).
-- Honeytokens (`decoys/honeytokens.yaml`) planted in one decoy and accepted in another:
-  `/backup/config.bak` on the web portal gives the SSH password, the SSH shell's
-  `~/.bash_history` gives the API key, and the API logs its use.
+  and FTP / MySQL / Redis listeners (2121, 3306, 6379). The FTP, MySQL and Redis listeners run
+  short bounded dialogues (at most 8 commands, 10 seconds) and log login attempts and commands.
+- Honeytokens (`decoys/honeytokens.yaml`): eight planted fake secrets. Some are accepted by another
+  decoy: `/backup/config.bak` on the web portal gives the SSH password, the SSH shell's
+  `~/.bash_history` gives the API key, and the API logs its use. Others are planted only.
 - A forwarder tails the JSONL files into SQLite (`data/qlure.db`, WAL mode) and chains every event
   by SHA-256. `qlure verify` checks the chain against the JSONL archive and fails at the first
   edited, deleted or removed event.
-- A correlation engine (`qlure correlate`) groups events into sessions and actors, applies the ten
-  rules in `qlure/rules/rules.yaml`, scores each session and writes a plain-language explanation
+- A correlation engine (`qlure correlate`) groups events into sessions and actors, applies the eleven
+  rules (R1 to R11) in `qlure/rules/rules.yaml`, scores each session and writes a plain-language explanation
   that names every rule, its threshold, the measured value and the evidence events. Verdicts follow
   the design doc: 0 to 29 Benign, 30 to 59 Suspicious, 60 and over Noteworthy only with two rule
   families or one high-confidence rule. An IP address alone never links sessions; raw TCP banner
@@ -94,8 +95,14 @@ localhost, and troubleshooting.
 
 ## Detection rules
 
-The ten rules that score each session, with their weights, thresholds and what each one
-detects, are listed in [docs/RULES.md](docs/RULES.md).
+The eleven rules (R1 to R11) that score each session, with their weights, thresholds and what
+each one detects, are described in [docs/architecture/05-correlation-and-verdicts.md](docs/architecture/05-correlation-and-verdicts.md)
+and defined in [qlure/rules/rules.yaml](qlure/rules/rules.yaml).
+
+## Docs
+
+- [docs/ROADMAP.md](docs/ROADMAP.md) for planned work, [docs/ATTACK_COVERAGE.md](docs/ATTACK_COVERAGE.md)
+  for ATT&CK coverage, and [docs/DEMO.md](docs/DEMO.md) for the demo walkthrough.
 
 ## Domain scanner
 
@@ -210,7 +217,7 @@ decoys/              web, api, ssh, banners, fakefs, honeytokens.yaml   (Inbatha
 qlure/events/        event schema + emit()                              (all, Prasanna Kumar Reddy)
 qlure/store/         forwarder, SQLite store, hash chain                (Prasanna Kumar Reddy)
 qlure/correlate/     sessions, actors, rules, scoring, explanations     (Bharadhwaj M)
-qlure/rules/         rules R1 to R10 in YAML                            (Bharadhwaj M)
+qlure/rules/         rules R1 to R11 in YAML                            (Bharadhwaj M)
 qlure/pqc/           ML-DSA signing, SSH KEX fingerprint (extra)
 qlure/cli.py         schema | validate | forward | verify | correlate | capture | replay | eval | keygen | sign
 dashboard/           session view and settings dashboard, FastAPI + HTMX (Prasanna Kumar Reddy)

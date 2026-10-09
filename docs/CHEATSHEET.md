@@ -46,7 +46,7 @@ powershell -ExecutionPolicy Bypass -File tools\demo-attack.ps1
 - `1` **Recon scan:** Fires multiple `curl` commands at hidden paths (e.g., `/.env`, `/wp-admin/`) to trigger **R2 (Path Enumeration)**.
 - `2` **Brute-force login:** Rapidly POSTs multiple fake passwords to `/login` to trigger **R3 (Brute Force)**.
 - `3` **Find the leaked file:** Uses regex to extract the planted SSH password from `/backup/config.bak` to set up **R7 (Honeytoken)**.
-- `8` **Path Traversal:** Attempts to download `../../../../etc/passwd`.
+- `8` **Path Traversal:** Requests `/download?file=../../../../etc/passwd` (answered from the fake file tree only).
 - `A` **Run All Automated:** Instantly runs all attacks sequentially without prompting.
 
 ---

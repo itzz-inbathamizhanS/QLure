@@ -30,7 +30,7 @@ If a page here disagrees with the code, the code wins. Please update the page.
 - **Event**: one thing a visitor did to one decoy, stored as one JSON line.
 - **Session**: a group of events that look like one continuous visit.
 - **Actor**: a group of sessions that are probably the same person or tool.
-- **Rule hit**: one of ten fixed checks (R1 to R10) that a session or actor triggered.
+- **Rule hit**: one of eleven fixed checks (R1 to R11) that a session or actor triggered.
 - **Score**: the sum of rule weights, capped by suppressors, from 0 to 100.
 - **Verdict**: Benign, Suspicious or Noteworthy, from the score and the rule families.
 - **Honeytoken**: a fake password or key planted in one decoy and accepted by another.

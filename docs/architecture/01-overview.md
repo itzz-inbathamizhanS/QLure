@@ -39,7 +39,7 @@ Two boundaries matter most:
 | Gateway | `gateway/` | nginx: the only container on both networks, relays HTTP and raw TCP | `nginx.conf` |
 | Forwarder and store | `qlure/store/` | Tails the JSONL files into SQLite, chains each event by SHA-256 | `forwarder.py`, `db.py`, `chain.py`, `verify.py` |
 | Correlation | `qlure/correlate/` | Sessions, actors, rules, scoring, verdicts, plain-language explanations | `sessions.py`, `actors.py`, `rules.py`, `engine.py`, `explain.py` |
-| Rules | `qlure/rules/` | Ten rules, their weights, thresholds and default-credential and scanner lists | `rules.yaml` |
+| Rules | `qlure/rules/` | Eleven rules (R1 to R11), their weights, thresholds, ATT&CK labels and default-credential and scanner lists | `rules.yaml` |
 | Dashboard | `dashboard/` | Session and actor views, rule cards, evidence export, printable report, settings | `app.py`, `data.py`, `auth.py`, `templates/` |
 | Settings | `qlure/settings.py` | The only changes an operator may make, validated and audited | `settings.py` |
 | Capture and evaluation | `qlure/capture.py`, `replay.py`, `evaluate.py` | Record labelled runs, replay request files, compute precision and recall | `cli.py` |
@@ -49,7 +49,7 @@ Two boundaries matter most:
 ## Status at a glance
 
 - Phases 0 to 6 are in place, plus the learned second opinion.
-- Five decoy services run behind the gateway: web, API, SSH-like, and three banners.
+- Six decoy services run behind the gateway: web, API, SSH-like, and FTP, MySQL and Redis banners.
 - The pipeline is tested end to end on real captured runs.
 - Recall on the first real-tool run was very low. See [page 10](10-known-limits.md) before
   drawing conclusions about detection quality.

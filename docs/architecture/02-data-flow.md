@@ -45,7 +45,8 @@ machine can reach the decoys. The gateway is nginx:
 
 The decoy answers from fixed, fake content. It never runs the visitor's input. For HTTP it looks
 at the path, query, body and headers. For SSH it reads commands and answers from a fake file
-tree. For banners it reads the first bytes and closes.
+tree. For FTP, MySQL and Redis it runs a short bounded dialogue (at most 8 commands and 10
+seconds) with fixed replies, then closes.
 
 ### 3. The decoy records the event
 
@@ -75,7 +76,7 @@ by the operator runs `forward` and `correlate` every 10 seconds instead.
 
 1. **Sessions**: groups events from the same visitor on the same service (see page 5).
 2. **Actors**: links sessions that share strong evidence (see page 5).
-3. **Rules and verdicts**: runs R1 to R10, sums the weights, applies suppressors, picks a verdict,
+3. **Rules and verdicts**: runs R1 to R11, sums the weights, applies suppressors, picks a verdict,
    and writes a plain-language explanation.
 
 Results go to the `sessions`, `actors` and `findings` tables. Correlation rebuilds them from

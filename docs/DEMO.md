@@ -281,7 +281,9 @@ Mention the honeytoken IDs in brackets to the audience; they are fake values bui
    `admin` / `admin` also triggers R4 (default credentials).
 3. **Read the leaked files.** Open http://127.0.0.1:8080/.env and then
    http://127.0.0.1:8080/backup/config.bak. Reading these sensitive files triggers R9. The backup
-   file contains the SSH login for `deploy` [ht-ssh-001].
+   file contains the SSH login for `deploy` [ht-ssh-001]. Optionally open
+   http://127.0.0.1:8080/.git/config too: it holds a planted git token [ht-git-001], which nothing
+   accepts, so it shows R9 only, not R7.
 4. **Log in over SSH with the stolen password.** In a terminal, run:
 
 ```bash
