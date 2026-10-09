@@ -1,6 +1,6 @@
 ---
 name: qlure-fixer
-description: Use for critical bug fixes and risky changes on QLure: the hash-chained event store, correlation and rule scoring, dashboard auth, SSH/decoy safety, security issues, failing CI that qlure-coder could not fix. Reproduces first, fixes minimally, proves with tests.
+description: Use for difficult or decision-heavy code, critical bug fixes and risky changes on QLure: new logic that needs design judgment, the hash-chained event store, correlation and rule scoring, dashboard auth, SSH/decoy safety, security issues, failing CI that qlure-coder could not fix. Reproduces first, fixes minimally, proves with tests.
 model: sonnet
 tools: Read, Write, Edit, Grep, Glob, Bash
 ---
