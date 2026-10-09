@@ -15,6 +15,7 @@ from pydantic import ValidationError
 
 from qlure import capture as capture_runs
 from qlure import evaluate as evaluation
+from qlure import export as ioc_export
 from qlure import replay as replay_requests
 from qlure.correlate import store as correlate_store
 from qlure.correlate.ioc import IOCSet, match_event
@@ -161,6 +162,21 @@ def _print_ioc_context(sessions, iocs: IOCSet) -> None:
     print(f"{matched} session(s) matched an indicator")
 
 
+def _export(args: argparse.Namespace) -> int:
+    try:
+        text = ioc_export.render(args.db, args.format, args.min_verdict)
+    except ioc_export.ExportError as exc:
+        print(f"export: {exc}", file=sys.stderr)
+        return 1
+    if args.out is None:
+        sys.stdout.write(text)
+        return 0
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(text, encoding="utf-8")
+    print(f"wrote {args.out}")
+    return 0
+
+
 def _watch_egress(args: argparse.Namespace) -> int:
     print(f"watching {args.proc_net} every {args.interval}s; alerts -> {args.out}", flush=True)
     try:
@@ -267,6 +283,15 @@ def main(argv: list[str] | None = None) -> int:
     p_corr.add_argument("--top", type=int, default=20, help="how many findings to print")
     p_corr.add_argument("--iocs", type=Path, default=None, help="STIX-like indicators JSON")
     p_corr.set_defaults(func=_correlate)
+
+    p_export = sub.add_parser("export", help="read-only IOC export: STIX 2.1, CSV or blocklist")
+    p_export.add_argument("--db", type=Path, default=DEFAULT_DB)
+    p_export.add_argument("--format", required=True, choices=ioc_export.FORMATS)
+    p_export.add_argument(
+        "--min-verdict", choices=ioc_export.MIN_VERDICTS, default=ioc_export.DEFAULT_MIN_VERDICT
+    )
+    p_export.add_argument("--out", type=Path, default=None, help="write to a file, not stdout")
+    p_export.set_defaults(func=_export)
 
     p_watch = sub.add_parser("watch-egress", help="alert when a decoy opens outbound connections")
     p_watch.add_argument("--proc-net", type=Path, default=Path("/proc/net"))
