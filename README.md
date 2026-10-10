@@ -112,6 +112,8 @@ localhost, and troubleshooting. Reviewers: [docs/REVIEWER.md](docs/REVIEWER.md) 
 The hosted snapshot is built outside this repository (ROADMAP P4.5 is not done), so it may not show
 the newest pages. For a populated dashboard from a fresh clone, see Sample data below.
 
+For step-by-step commands to build, run, demo and clean up the Docker stack on Windows, see [docs/MANUAL_GUIDE.md](docs/MANUAL_GUIDE.md).
+
 ## Detection rules
 
 The eleven rules (R1 to R11) that score each session, with their weights, thresholds and what
@@ -124,6 +126,7 @@ and defined in [qlure/rules/rules.yaml](qlure/rules/rules.yaml).
   [docs/ATTACK_COVERAGE.md](docs/ATTACK_COVERAGE.md) for ATT&CK coverage,
   [docs/DEMO.md](docs/DEMO.md) for the demo walkthrough and [docs/REVIEWER.md](docs/REVIEWER.md)
   for a 5-minute walkthrough.
+- [docs/MANUAL_GUIDE.md](docs/MANUAL_GUIDE.md) for the manual Docker run, demo and cleanup steps.
 - [docs/EXPORT.md](docs/EXPORT.md) (IOC files), [docs/ALERTS.md](docs/ALERTS.md) (webhook alerts),
   [docs/RETENTION.md](docs/RETENTION.md) (`qlure prune`) and [docs/CHEATSHEET.md](docs/CHEATSHEET.md)
   (commands).
