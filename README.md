@@ -129,6 +129,7 @@ and defined in [qlure/rules/rules.yaml](qlure/rules/rules.yaml).
   (commands).
 - [docs/DEPLOY_RENDER.md](docs/DEPLOY_RENDER.md) for the hosted read-only demo on Render (sample data, no live decoys).
 - [docs/DEPLOY_ALONGSIDE_REAL_SERVICE.md](docs/DEPLOY_ALONGSIDE_REAL_SERVICE.md) for running decoys beside a real service (layouts, firewall, checklist, limits).
+- [docs/ATTACK_JOURNEY.md](docs/ATTACK_JOURNEY.md) for how an attacker progresses after a port scan, what slows each stage, and which rules record it.
 
 ## Domain scanner
 
