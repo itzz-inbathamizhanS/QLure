@@ -80,7 +80,9 @@ Use these steps to show a live attack by hand. Each one is harmless and goes onl
    ssh -p 2222 deploy@localhost
    ```
    Use the planted deploy password from `decoys/honeytokens.yaml` if the decoy asks for one. Type a few harmless commands such as `ls` and `whoami`, then type `exit`.
-5. **Process the events.** The forwarder container loads new log lines on its own. To run the steps by hand, use:
+5. **Process the events.** In Docker mode the forwarder container does this on its own, so skip this step.
+   The commands below write to `data\qlure.db` on this computer, which the Docker dashboard does not read.
+   Run them only for a local run without Docker:
    ```bash
    python -m qlure.cli forward --logs logs --db data\qlure.db
    ```
@@ -149,14 +151,20 @@ so copy them from there rather than from this guide.
    ssh -p 2222 deploy@127.0.0.1
    ```
    Use the deploy password from `decoys\honeytokens.yaml`. The visitor sees an SSH login, then a
-   fake shell. Type `ls` and `exit` to finish.
+   fake shell. Type `ls` and `exit` to finish. You type the password yourself at the prompt.
 
-8. **FTP banner, port 2121.** Use the built-in Windows FTP client:
+   If SSH prints **REMOTE HOST IDENTIFICATION HAS CHANGED**, the decoy's host key changed since
+   your last run. Remove the old entry and try again:
    ```bash
-   ftp 127.0.0.1 2121
+   ssh-keygen -R "[127.0.0.1]:2222"
    ```
-   The visitor sees the greeting `220 ProFTPD 1.3.8 Server (Veltrix Files)`. Log in with any user and
-   password: the first attempt gets **331** (password needed), then **530 Login incorrect**. Type `bye` to finish.
+
+8. **FTP banner, port 2121.** The Windows `ftp` command can't set a port, so use curl:
+   ```bash
+   curl -v --user anonymous:guest ftp://127.0.0.1:2121/
+   ```
+   The visitor sees the greeting `220 ProFTPD 1.3.8 Server (Veltrix Files)`. The login attempt gets
+   **331** (password needed), then **530 Login incorrect**.
 
 9. **MySQL banner, port 3306.**
    ```bash
@@ -177,6 +185,15 @@ so copy them from there rather than from this guide.
     redis-cli -p 6379 INFO
     ```
     After `AUTH` succeeds, the visitor sees fixed server details (Redis 7.0.15).
+
+    If `redis-cli` is not installed, send the same commands over a raw connection in Git Bash.
+    Replace `PASSWORD` with the value from `decoys\honeytokens.yaml`:
+    ```bash
+    printf "PING\r\n" | timeout 5 bash -c 'exec 3<>/dev/tcp/127.0.0.1/6379; cat >&3; timeout 3 cat <&3'
+    ```
+    ```bash
+    printf "AUTH PASSWORD\r\nINFO server\r\n" | timeout 6 bash -c 'exec 3<>/dev/tcp/127.0.0.1/6379; cat >&3; timeout 4 cat <&3'
+    ```
 
 11. **Fake Docker API, port 2375.**
     ```bash
