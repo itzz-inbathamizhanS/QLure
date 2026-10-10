@@ -95,7 +95,104 @@ If the honeytoken page doesn't load, run the matching scripted step instead:
 python tools\demo_scenario.py --only web-lfi --no-proxy-header
 ```
 
-### 5b. Automated attack script
+### 5b. Manual steps for each decoy
+
+Run these one at a time in a terminal. Each one is harmless, and each goes only to 127.0.0.1. The
+values for the API key, the SSH password and the Redis password are in `decoys\honeytokens.yaml`,
+so copy them from there rather than from this guide.
+
+1. **Web portal, port 8080: login page.**
+   ```bash
+   curl -i http://127.0.0.1:8080/login
+   ```
+   The visitor sees a login page.
+
+2. **Web portal: planted files.**
+   ```bash
+   curl -i http://127.0.0.1:8080/.env
+   ```
+   ```bash
+   curl -i http://127.0.0.1:8080/backup/
+   ```
+   ```bash
+   curl -i http://127.0.0.1:8080/.git/config
+   ```
+   The visitor sees a planted `.env`, a backup folder listing, and a git config. The git config
+   holds a planted deploy token.
+
+3. **Web portal: phpMyAdmin-style login.**
+   ```bash
+   curl -i http://127.0.0.1:8080/phpmyadmin/
+   ```
+   The visitor sees a phpMyAdmin-style login form.
+
+4. **Web portal: upload sink.**
+   ```bash
+   curl -i -X POST -d "test=1" http://127.0.0.1:8080/upload
+   ```
+   The visitor gets a fixed **403 Forbidden** page. Nothing is stored.
+
+5. **REST API, port 8081: no key.**
+   ```bash
+   curl -i http://127.0.0.1:8081/api/v1/users
+   ```
+   The visitor gets **401**, "Invalid or missing API key".
+
+6. **REST API: with the planted key.** Copy the `ht-api-001` value from `decoys\honeytokens.yaml` into `KEY`:
+   ```bash
+   curl -i -H "x-api-key: KEY" http://127.0.0.1:8081/api/v1/users
+   ```
+   The visitor gets a fixed JSON list of users.
+
+7. **SSH-like server, port 2222.**
+   ```bash
+   ssh -p 2222 deploy@127.0.0.1
+   ```
+   Use the deploy password from `decoys\honeytokens.yaml`. The visitor sees an SSH login, then a
+   fake shell. Type `ls` and `exit` to finish.
+
+8. **FTP banner, port 2121.** Use the built-in Windows FTP client:
+   ```bash
+   ftp 127.0.0.1 2121
+   ```
+   The visitor sees the greeting `220 ProFTPD 1.3.8 Server (Veltrix Files)`. Log in with any user and
+   password: the first attempt gets **331** (password needed), then **530 Login incorrect**. Type `bye` to finish.
+
+9. **MySQL banner, port 3306.**
+   ```bash
+   curl -v telnet://127.0.0.1:3306
+   ```
+   The visitor sees a MySQL 8.0 server greeting, then **Access denied**. Press `Ctrl+C` to stop.
+
+10. **Redis banner, port 6379.** With `redis-cli` installed:
+    ```bash
+    redis-cli -p 6379 PING
+    ```
+    The visitor gets `-NOAUTH Authentication required.` Then copy the `redis_password` value from
+    `decoys\honeytokens.yaml` and send it:
+    ```bash
+    redis-cli -p 6379 AUTH PASSWORD
+    ```
+    ```bash
+    redis-cli -p 6379 INFO
+    ```
+    After `AUTH` succeeds, the visitor sees fixed server details (Redis 7.0.15).
+
+11. **Fake Docker API, port 2375.**
+    ```bash
+    curl -i http://127.0.0.1:2375/version
+    ```
+    The visitor gets fixed Docker Engine JSON.
+    ```bash
+    curl -i -X POST -H "Content-Type: application/json" -d "{\"Image\":\"alpine\"}" http://127.0.0.1:2375/containers/create
+    ```
+    The visitor gets **201** with a fake container id. Nothing is created.
+    ```bash
+    curl -i -X POST "http://127.0.0.1:2375/images/create?fromImage=alpine&tag=latest"
+    ```
+    The visitor gets status lines such as "Downloaded newer image for alpine:latest". No id is returned.
+
+### 5c. Automated attack script
 
 ```bash
 tools\attack_all.bat --no-proxy-header
