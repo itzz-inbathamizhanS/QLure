@@ -58,7 +58,44 @@ Get-NetTCPConnection -LocalPort 2222
 
 Stop that program yourself, then run `docker compose up -d` again.
 
-## 5. Send the demo attacks
+## 5. Running the attacks
+
+Start the stack first, since it is stopped after `docker compose down`:
+
+```bash
+docker compose up -d --build
+```
+
+Wait until the dashboard answers at http://127.0.0.1:9000 before you start the attacks.
+
+### 5a. Manual walkthrough (live, in front of reviewers)
+
+Use these steps to show a live attack by hand. Each one is harmless and goes only to 127.0.0.1.
+
+1. **Sign in to the dashboard.** Open http://127.0.0.1:9000 and sign in with `QLURE_DASHBOARD_PASSWORD` from `.env`.
+2. **Failed logins.** Open http://localhost:8080/login in a browser and enter a few wrong usernames and passwords, for example three or four attempts. Each attempt is logged.
+3. **Honeytoken file.** Open http://localhost:8080/backup/config.bak. It is a planted fake config file. Opening it records a honeytoken hit (R7).
+4. **SSH session.** In a terminal run:
+   ```bash
+   ssh -p 2222 deploy@localhost
+   ```
+   Use the planted deploy password from `decoys/honeytokens.yaml` if the decoy asks for one. Type a few harmless commands such as `ls` and `whoami`, then type `exit`.
+5. **Process the events.** The forwarder container loads new log lines on its own. To run the steps by hand, use:
+   ```bash
+   python -m qlure.cli forward --logs logs --db data\qlure.db
+   ```
+   ```bash
+   python -m qlure.cli correlate --db data\qlure.db
+   ```
+6. **Check the flagged sessions.** Refresh **Sessions** on the dashboard. The browser session should show failed-login rules, the honeytoken session should show R7, and the SSH session should show R7 and R8 or R9. Open the top session and follow section 6.
+
+If the honeytoken page doesn't load, run the matching scripted step instead:
+
+```bash
+python tools\demo_scenario.py --only web-lfi --no-proxy-header
+```
+
+### 5b. Automated attack script
 
 ```bash
 tools\attack_all.bat --no-proxy-header
