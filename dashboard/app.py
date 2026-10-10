@@ -112,6 +112,11 @@ def _coerce(key: str, value: str) -> Any:
     return value
 
 
+def _cookie_secure() -> bool:
+    """QLURE_COOKIE_SECURE=1/true/yes marks the login cookie Secure (for HTTPS). Off by default."""
+    return os.environ.get("QLURE_COOKIE_SECURE", "").strip().lower() in ("1", "true", "yes")
+
+
 def live_interval() -> int | None:
     """Seconds between background correlation passes, or None when QLURE_LIVE=0 turns them off."""
     if os.environ.get("QLURE_LIVE", "1").strip() == "0":
@@ -147,7 +152,7 @@ def correlate_db(db_file: Path) -> None:
 async def live_tick(db_file: Path, feed: LiveFeed) -> bool:
     """One background pass. Returns False when it was skipped: a pass is already running, or
     judge mode is on (a pass writes to the store, and judge mode is read-only)."""
-    if feed.lock.locked() or cfg.load_settings()["judge_mode"]:
+    if feed.lock.locked() or cfg.judge_active(cfg.load_settings()):
         return False
     async with feed.lock:
         await run_in_threadpool(correlate_db, db_file)
@@ -212,7 +217,7 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
         }
 
     def page(request: Request, name: str, status: int = 200, **context: Any) -> Response:
-        context.setdefault("judge_mode", cfg.load_settings()["judge_mode"])
+        context.setdefault("judge_mode", cfg.judge_active(cfg.load_settings()))
         context.setdefault("hosted", bool(os.environ.get("VERCEL")))
         context.setdefault("nav", "")
         return templates.TemplateResponse(request, name, context, status_code=status)
@@ -288,14 +293,22 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
             return page(request, "login.html", status=401, error="Wrong password.")
         response = RedirectResponse("/", status_code=303)
         response.set_cookie(
-            COOKIE, auth.issue(), httponly=True, samesite="strict", max_age=LIFETIME
+            COOKIE,
+            auth.issue(),
+            httponly=True,
+            samesite="strict",
+            max_age=LIFETIME,
+            secure=_cookie_secure(),
         )
         return response
 
     @app.post("/logout")
     async def logout() -> Response:
         response = RedirectResponse("/login", status_code=303)
-        response.delete_cookie(COOKIE)
+        if _cookie_secure():
+            response.delete_cookie(COOKIE, httponly=True, samesite="strict", secure=True)
+        else:
+            response.delete_cookie(COOKIE)
         return response
 
     @app.get("/", response_class=HTMLResponse)
@@ -422,7 +435,7 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
         """
         if confirm != "yes":
             return Response("Tick the box to confirm clearing all data.", status_code=400)
-        if cfg.load_settings()["judge_mode"]:
+        if cfg.judge_active(cfg.load_settings()):
             return Response("Judge mode is on: data cannot be cleared", status_code=403)
         files = sorted(logs.glob("*.jsonl"))
         locked = [f.name for f in files if not os.access(f, os.W_OK)]
@@ -478,7 +491,7 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
         label = str(form.get("label", ""))
         if label not in LABELS:
             return Response("Unknown label", status_code=400)
-        if cfg.load_settings()["judge_mode"]:
+        if cfg.judge_active(cfg.load_settings()):
             return Response("Judge mode is on: labels are read-only", status_code=403)
         evidence = [str(v) for v in form.getlist("evidence")]
         with closing(conn()) as c:
@@ -546,6 +559,7 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
                 "config.html",
                 nav="settings",
                 s=cfg.load_settings(),
+                judge_locked=cfg.judge_locked(),
                 approved_ports=cfg.APPROVED_PORTS,
                 rule_ids=[f"R{i}" for i in range(1, 11)],
                 audit=audit,

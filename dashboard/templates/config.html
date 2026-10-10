@@ -50,7 +50,7 @@
     <section class="panel">
       <div class="panel-head"><svg class="icon"><use href="#i-lock"/></svg><h2>Mode and retention</h2></div>
       <div class="panel-body form-grid">
-        <label>Judge mode (read-only)
+        <label>Judge mode (read-only){% if judge_locked %} <span class="muted">· locked by the host</span>{% endif %}
           <select name="judge_mode">
             <option value="false" {{ 'selected' if not s.judge_mode }}>Off</option>
             <option value="true" {{ 'selected' if s.judge_mode }}>On</option>

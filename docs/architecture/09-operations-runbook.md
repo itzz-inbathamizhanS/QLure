@@ -3,6 +3,9 @@
 Everything here runs from the project folder, `D:\QLure` on Windows. Commands are for PowerShell
 unless marked otherwise.
 
+The hosted read-only demo on Render (sample data, no live decoys) is described in
+[DEPLOY_RENDER.md](../DEPLOY_RENDER.md).
+
 ## First-time setup
 
 Create the runtime folders (the compose file mounts them):

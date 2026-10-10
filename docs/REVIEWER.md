@@ -3,7 +3,7 @@
 QLure runs fake services (a web portal, a REST API, an SSH-like shell, a fake Docker Engine API, and
 FTP, MySQL and Redis banner listeners) and records what visitors do. Events are hash-chained,
 grouped into sessions, scored by eleven readable rules (R1 to R11), and shown on a dashboard with
-their evidence.
+their evidence. For the hosted read-only demo (sample data, no live decoys), see [DEPLOY_RENDER.md](DEPLOY_RENDER.md).
 
 ## What changed since the audit
 
@@ -149,6 +149,9 @@ qlure schema --check                                             # exit 0: schem
 
 The two xfailed attack rows are known gaps, listed in [docs/ATTACK_COVERAGE.md](ATTACK_COVERAGE.md).
 Planned work and task status are in [docs/ROADMAP.md](ROADMAP.md).
+
+For what an attacker typically does after a port scan, and which rules and ATT&CK IDs record each
+stage on the seeded data, see [docs/ATTACK_JOURNEY.md](ATTACK_JOURNEY.md).
 
 ## Honest limits
 
