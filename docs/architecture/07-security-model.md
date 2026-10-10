@@ -103,6 +103,13 @@ Two dashboard routes answer without the admin login. Both return counts and time
   scrape network, and never expose it to the internet. See
   [page 6](06-dashboard-and-settings.md#public-metrics-qlure_metrics_public1).
 
+## Dashboard session cookie over HTTPS
+
+The login cookie is always `HttpOnly` and `SameSite=Strict`. Set `QLURE_COOKIE_SECURE=1` (or `true`
+or `yes`) to also mark it `Secure`, and to expire it with the same attributes on logout. Use it when
+the dashboard is served over HTTPS. It is off by default so local `http://127.0.0.1` use works.
+Proxy headers such as `X-Forwarded-Proto` are never used for this.
+
 ## Things that are not protections
 
 - The dashboard password is a single shared secret, not user accounts.

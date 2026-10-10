@@ -112,6 +112,11 @@ def _coerce(key: str, value: str) -> Any:
     return value
 
 
+def _cookie_secure() -> bool:
+    """QLURE_COOKIE_SECURE=1/true/yes marks the login cookie Secure (for HTTPS). Off by default."""
+    return os.environ.get("QLURE_COOKIE_SECURE", "").strip().lower() in ("1", "true", "yes")
+
+
 def live_interval() -> int | None:
     """Seconds between background correlation passes, or None when QLURE_LIVE=0 turns them off."""
     if os.environ.get("QLURE_LIVE", "1").strip() == "0":
@@ -288,14 +293,22 @@ def create_app(db_path: Path | None = None, logs_dir: Path | None = None) -> Fas
             return page(request, "login.html", status=401, error="Wrong password.")
         response = RedirectResponse("/", status_code=303)
         response.set_cookie(
-            COOKIE, auth.issue(), httponly=True, samesite="strict", max_age=LIFETIME
+            COOKIE,
+            auth.issue(),
+            httponly=True,
+            samesite="strict",
+            max_age=LIFETIME,
+            secure=_cookie_secure(),
         )
         return response
 
     @app.post("/logout")
     async def logout() -> Response:
         response = RedirectResponse("/login", status_code=303)
-        response.delete_cookie(COOKIE)
+        if _cookie_secure():
+            response.delete_cookie(COOKIE, httponly=True, samesite="strict", secure=True)
+        else:
+            response.delete_cookie(COOKIE)
         return response
 
     @app.get("/", response_class=HTMLResponse)

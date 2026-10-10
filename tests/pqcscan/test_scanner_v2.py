@@ -2,10 +2,17 @@ import pytest
 
 from qlure.pqcscan.crypto.pqc_detector import PQCDetector
 from qlure.pqcscan.errors import ScannerErrorType, ScannerException
+from qlure.pqcscan.security import target_validator
 from qlure.pqcscan.security.target_validator import validate_target
 
 
-def test_target_validator_valid():
+def test_target_validator_valid(monkeypatch):
+    # A fixed public answer instead of a real DNS lookup, so the test needs no network.
+    monkeypatch.setattr(
+        target_validator,
+        "_getaddrinfo_with_timeout",
+        lambda host: [(2, 1, 6, "", ("93.184.216.34", 0))],
+    )
     assert validate_target("example.com") == "example.com"
     assert validate_target("https://example.com") == "example.com"
 
