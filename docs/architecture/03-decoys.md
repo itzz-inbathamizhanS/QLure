@@ -168,3 +168,5 @@ These are labels only: the weights and verdict thresholds did not change.
 `python -m decoys.ssh.server` and `python -m decoys.banners.listeners` bind `QLURE_BIND_HOST`
 (or `--host`), default `0.0.0.0` for Docker. Set `QLURE_BIND_HOST=127.0.0.1` for a local run. Start
 the uvicorn decoys with `--host 127.0.0.1`.
+
+To run decoys beside a real service on a public address, see [the deployment guide](../DEPLOY_ALONGSIDE_REAL_SERVICE.md).

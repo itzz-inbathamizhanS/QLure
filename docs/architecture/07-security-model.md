@@ -3,6 +3,8 @@
 Q-Lure is designed so that an attacker who reaches a decoy learns nothing real and can do nothing
 real. Every safety rule below is either enforced by the setup or checked by the tests.
 
+For running the decoys beside a real service, see [the deployment guide](../DEPLOY_ALONGSIDE_REAL_SERVICE.md). Hiding a port is not a control there either.
+
 ## Rules that always hold
 
 1. **Emulate, never execute.** No `exec`, `eval`, `subprocess` or real database in `decoys/`.

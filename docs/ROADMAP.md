@@ -44,6 +44,8 @@ Verification for every phase:
 ruff check . && ruff format --check . && qlure schema --check && pytest -q
 ```
 
+Note: a guide for running decoys beside a real service is in [DEPLOY_ALONGSIDE_REAL_SERVICE.md](DEPLOY_ALONGSIDE_REAL_SERVICE.md), with a reviewed example gateway config (`gateway/nginx.real-and-decoy.example.conf`, not used by compose) and firewall examples. It is not tested against any live network.
+
 ## Known facts before starting
 
 The facts below are the audit's starting point. The ones marked as resolved were fixed by later tasks.
