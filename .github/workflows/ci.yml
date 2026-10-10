@@ -25,6 +25,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e '.[dev]'
+      # The nginx test checks the gateway config, which has a stream block. Ubuntu ships the
+      # stream module as a separate package.
+      - run: sudo apt-get install -y libnginx-mod-stream
       # liboqs (post-quantum signatures) is built from source on first import; keep the build.
       - uses: actions/cache@v4
         with:

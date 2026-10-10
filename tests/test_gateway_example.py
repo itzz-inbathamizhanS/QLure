@@ -317,6 +317,11 @@ def test_nginx_config_test_with_placeholder_certificates(tmp_path):
     # checks the syntax without needing the real names to resolve.
     text = re.sub(r"\b(real-app\.internal|decoy-[a-z]+)\b", "127.0.0.1", text)
     text = text.replace("/etc/ssl/example/", f"{tmp_path}/")
+    # Debian and Ubuntu ship the stream module as a separate file that must be loaded first.
+    # The Docker image builds it in, and there the file does not exist.
+    stream_module = Path("/usr/lib/nginx/modules/ngx_stream_module.so")
+    if stream_module.exists():
+        text = f"load_module {stream_module};\n{text}"
     (tmp_path / "logs").mkdir()
     conf = tmp_path / "nginx.conf"
     conf.write_text(text, encoding="utf-8")
