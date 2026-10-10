@@ -335,4 +335,6 @@ def test_nginx_config_test_with_placeholder_certificates(tmp_path):
     )
     if result.returncode != 0 and "Permission denied" in result.stderr:
         pytest.skip("this user cannot bind the privileged ports that nginx -t checks")
+    if result.returncode != 0 and 'unknown directive "stream"' in result.stderr:
+        pytest.skip("this nginx build has no stream module")
     assert result.returncode == 0, result.stderr
