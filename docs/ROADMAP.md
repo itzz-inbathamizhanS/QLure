@@ -33,7 +33,7 @@ Checked against the repository on 2026-10-09. Done means the code, tests and doc
 | P4.2 `/healthz` and metrics | Done | `/healthz` public; `/metrics` needs login unless `QLURE_METRICS_PUBLIC=1`; export downloads included |
 | P4.3 Webhook alerts | Done | Operator side only: `qlure alert`, off by default. Not wired into the dashboard live feed |
 | P4.4 Retention with anchor | Done | `qlure prune` with a hash-chain anchor; `qlure verify` accepts a pruned chain; manual only |
-| P4.5 Rebuild the vercel bundle | Not done | No `vercel-deploy/` folder or bundle in the repository; the hosted snapshot is not rebuilt from the seed |
+| P4.5 Rebuild the vercel bundle | Superseded | No Vercel bundle is built. The hosted demo is a Render web service from `render.yaml`, with sample data built at deploy time; see [DEPLOY_RENDER.md](DEPLOY_RENDER.md) |
 | P4.6 Update architecture docs 03, 05, 10 | Done | Updated in the docs pass that added this table |
 
 **Safety rule for every task:** every decoy reply is a fixed or fake constant. No exec, no subprocess, no file writes from attacker input, no outbound traffic. Every planted value contains "decoy" and fake keys must not parse as real keys.

@@ -127,6 +127,7 @@ and defined in [qlure/rules/rules.yaml](qlure/rules/rules.yaml).
 - [docs/EXPORT.md](docs/EXPORT.md) (IOC files), [docs/ALERTS.md](docs/ALERTS.md) (webhook alerts),
   [docs/RETENTION.md](docs/RETENTION.md) (`qlure prune`) and [docs/CHEATSHEET.md](docs/CHEATSHEET.md)
   (commands).
+- [docs/DEPLOY_RENDER.md](docs/DEPLOY_RENDER.md) for the hosted read-only demo on Render (sample data, no live decoys).
 
 ## Domain scanner
 

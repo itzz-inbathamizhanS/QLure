@@ -3,7 +3,7 @@
 QLure runs fake services (a web portal, a REST API, an SSH-like shell, a fake Docker Engine API, and
 FTP, MySQL and Redis banner listeners) and records what visitors do. Events are hash-chained,
 grouped into sessions, scored by eleven readable rules (R1 to R11), and shown on a dashboard with
-their evidence.
+their evidence. For the hosted read-only demo (sample data, no live decoys), see [DEPLOY_RENDER.md](DEPLOY_RENDER.md).
 
 ## What changed since the audit
 
