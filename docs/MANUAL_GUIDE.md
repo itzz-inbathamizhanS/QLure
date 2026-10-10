@@ -1,4 +1,4 @@
-# Manual guide: run, demo and clean up Q-Lure
+﻿# Manual guide: run, demo and clean up Q-Lure
 
 Step-by-step commands to rebuild, run and demo the Q-Lure stack on Windows, and to stop it and
 clean up later. Run every command from the project folder, `D:\QLure`, in PowerShell or Command
@@ -170,7 +170,7 @@ so copy them from there rather than from this guide.
    ```bash
    curl -v telnet://127.0.0.1:3306
    ```
-   The visitor sees a MySQL 8.0 server greeting, then **Access denied**. Press `Ctrl+C` to stop.
+   The visitor sees a MySQL 8.0 server greeting. **Access denied** appears only after a client sends a login. Press `Ctrl+C` to stop.
 
 10. **Redis banner, port 6379.** With `redis-cli` installed:
     ```bash
