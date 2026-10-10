@@ -101,3 +101,7 @@ only the password does not end sessions that are already open; they expire after
 ## 9. The Vercel project
 
 The earlier hosted snapshot on Vercel is a separate project. This Render service does not change it.
+
+## Judge lock
+
+`render.yaml` sets `QLURE_JUDGE_LOCK=1`. With it, judge mode cannot be changed from the settings page (on or off, including Undo) and counts as on even if the stored value is off, so Clear All and settings changes stay refused. An existing Render service must have `QLURE_JUDGE_LOCK=1` added in its Environment tab. `tools/prepare_hosted_demo.py` ignores the lock in its own process so the build can still turn judge mode on. Locally the variable is unset and judge mode stays a switch the admin can turn off.

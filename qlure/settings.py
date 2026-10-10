@@ -265,6 +265,19 @@ def audit(
     conn.commit()
 
 
+JUDGE_LOCK_REASON = "judge mode is locked by the host (QLURE_JUDGE_LOCK)"
+
+
+def judge_locked() -> bool:
+    """True when the host set QLURE_JUDGE_LOCK (1/true/yes). Off by default."""
+    return os.environ.get("QLURE_JUDGE_LOCK", "").strip().lower() in {"1", "true", "yes"}
+
+
+def judge_active(data: dict[str, Any]) -> bool:
+    """Effective judge mode: the stored switch, or always on while the host lock is set."""
+    return bool(data.get("judge_mode")) or judge_locked()
+
+
 def apply_change(
     conn: sqlite3.Connection, who: str, changes: dict[str, Any], path: Path | None = None
 ) -> tuple[bool, str]:
@@ -276,7 +289,9 @@ def apply_change(
 
     for key, value in changes.items():
         reason = _forbidden(key)
-        if reason is None and current.get("judge_mode") and key not in allowed_in_judge_mode:
+        if reason is None and key == "judge_mode" and judge_locked():
+            reason = JUDGE_LOCK_REASON
+        if reason is None and judge_active(current) and key not in allowed_in_judge_mode:
             reason = "judge mode is on: settings are read-only"
         if reason is None and not _set(candidate, key, value):
             reason = "not a setting: the path goes below a plain value"

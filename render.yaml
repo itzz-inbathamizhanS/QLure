@@ -3,7 +3,8 @@
 # This is a READ-ONLY demo dashboard with SAMPLE data, not a live honeypot. At build time
 # tools/seed_demo.py drives the decoys in-process (no ports, no network) to create a verified
 # sample database, then tools/prepare_hosted_demo.py turns judge mode on through the settings
-# API (audited), so settings changes and Clear All are refused. The data is rebuilt on every
+# API (audited), so settings changes and Clear All are refused. QLURE_JUDGE_LOCK=1 keeps
+# anyone with the demo password from switching judge mode off. The data is rebuilt on every
 # deploy; the free plan has no disk.
 #
 # The SSH, FTP, MySQL and Redis decoys are NOT deployed: a Render web service exposes only
@@ -37,6 +38,8 @@ services:
       - key: QLURE_LIVE
         value: "0"
       - key: QLURE_COOKIE_SECURE
+        value: "1"
+      - key: QLURE_JUDGE_LOCK
         value: "1"
       - key: QLURE_DASHBOARD_PASSWORD
         generateValue: true
