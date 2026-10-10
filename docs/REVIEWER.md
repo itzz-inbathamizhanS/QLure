@@ -150,6 +150,9 @@ qlure schema --check                                             # exit 0: schem
 The two xfailed attack rows are known gaps, listed in [docs/ATTACK_COVERAGE.md](ATTACK_COVERAGE.md).
 Planned work and task status are in [docs/ROADMAP.md](ROADMAP.md).
 
+For what an attacker typically does after a port scan, and which rules and ATT&CK IDs record each
+stage on the seeded data, see [docs/ATTACK_JOURNEY.md](ATTACK_JOURNEY.md).
+
 ## Honest limits
 
 Read [docs/architecture/10-known-limits.md](architecture/10-known-limits.md) before quoting numbers:
